@@ -20,6 +20,12 @@ p5_fstype=$(/usr/bin/lsblk -no FSTYPE "$p5dev" 2>/dev/null || true)
 
 # Already a populated filesystem and no room to grow: only mark done.
 if [ "$free_sectors" -lt 131072 ] && [ -n "$p5_fstype" ]; then
+    # p5 already fills the disk (reused card): keep its data, but reconcile the
+    # /roms UUID in fstab with this exFAT's real UUID so /roms actually mounts.
+    uuid=$(/usr/bin/lsblk -no UUID "$p5dev")
+    if [ -n "$uuid" ] && /usr/bin/grep -qE '^[^#]*[[:space:]]/roms[[:space:]]' /etc/fstab; then
+        /usr/bin/sed -i -E "s#^[^#]*[[:space:]]/roms[[:space:]].*#UUID=${uuid} /roms exfat defaults,noatime,uid=1000,gid=1000,umask=000,nofail 0 0#" /etc/fstab
+    fi
     /usr/bin/touch "$MARKER"
     /usr/bin/sync
     exit 0

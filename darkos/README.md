@@ -33,8 +33,8 @@
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `f090f769e43a621482fb52a1d4b8b80a7d03ccfdf771ac067e612d2eaa2face0` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,363,000 B | `43e842d05729bf2749c57e83c25df6edac6ca8fd728f2a09d5d966b398206bb8` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `a7e446fc1cc47d76d894655f96410665e86b633ecce65fe35a20549d307567e7` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,418,479,516 B | `782d2f3ae5329a32472d873ae81fae262e3333a7c8993812c55d18111b46918f` |
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
 刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
@@ -56,8 +56,10 @@
 首次启动会由 `sshd-keygen.service` 重新生成 SSH host keys——**注意：这条在 20261025
 首测时是坏的**（machine-id 被清空后 systemd 会抢先重建它，`ConditionFirstBoot` 不再成立，
 sshd-keygen 被跳过 → sshd 无 host key → `ssh.service` 启动失败并卡住首次启动）。现改为
-**镜像里预置一套全新的 host key**（并加了 drop-in 清掉易失效的 ConditionFirstBoot 兜底），
-`ark` 密码已锁定，可在 p3 根目录放 `authorized_keys` 供 firstboot 安装，或在设备上设置密码。
+**镜像里预置一套全新的 host key**（并加了 drop-in 清掉易失效的 ConditionFirstBoot 兜底）；
+**默认登录 `ark`/`ark`（首次登录后请务必修改）**，`root` 仍锁定。WiFi 需重新配置。
+系统已集成 **PortMaster**（`/opt/system/Tools/PortMaster`）：Ports 游戏 SELECT+START 退出、
+音频走 softvol 跟随系统音量；`/opt/system/修改密码.sh` 已改为 `sudo chpasswd`（锁定账号也能设密码）。
 WiFi 需重新配置。
 
 ## 目录

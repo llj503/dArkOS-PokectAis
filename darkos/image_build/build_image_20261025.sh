@@ -156,12 +156,12 @@ for RAG in "$M/home/ark/.config/retroarch/retroarch.cfg" "$M/home/ark/.config/re
     log "cleared netplay_password in $RAG"
   fi
 done
-for u in ark root; do
-  if awk -F: -v u="$u" '$1==u{f=1} END{exit f?0:1}' "$M/etc/shadow"; then
-    awk -F: -v u="$u" 'BEGIN{OFS=":"} $1==u{$2="*"} {print}' "$M/etc/shadow" > "$M/etc/shadow.tmp"
-    chmod 640 "$M/etc/shadow.tmp"; chown 0:42 "$M/etc/shadow.tmp"; mv "$M/etc/shadow.tmp" "$M/etc/shadow"
-  fi
-done
+# Distribution default login: ark / ark (convenient after flashing); root stays
+# locked. ARK_HASH is a yescrypt hash of "ark".
+ARK_HASH='$y$j9T$4w5B4LAPVIf7jlWZ.wsgj.$O.N6vUQYWh0bnsrG7CWE6VPDD.juaE5YhXqb50TtFv/'
+awk -F: -v h="$ARK_HASH" 'BEGIN{OFS=":"} $1=="ark"{$2=h} $1=="root"{$2="*"} {print}' "$M/etc/shadow" > "$M/etc/shadow.tmp"
+chmod 640 "$M/etc/shadow.tmp"; chown 0:42 "$M/etc/shadow.tmp"; mv "$M/etc/shadow.tmp" "$M/etc/shadow"
+log "default login set: ark/ark (root locked)"
 rm -f "$M/etc/shadow-" "$M/etc/gshadow-" "$M/etc/passwd-" "$M/etc/group-"
 if [ -f "$M/lib/systemd/system/sshd-keygen.service" ] || [ -f "$M/usr/lib/systemd/system/sshd-keygen.service" ]; then
   mkdir -p "$M/etc/systemd/system/multi-user.target.wants"
@@ -173,7 +173,8 @@ sync
 fail=0
 if [ -n "$PSK_VALUE" ]; then c=$(grep -rIlF -- "$PSK_VALUE" "$M" 2>/dev/null | grep -c . || true); log "psk_matches=$c"; [ "$c" -eq 0 ] || fail=1; fi
 if [ -n "$SSID_BASE" ]; then c=$(grep -rIlF -- "$SSID_BASE" "$M" 2>/dev/null | grep -c . || true); log "ssid_matches=$c"; [ "$c" -eq 0 ] || fail=1; fi
-awk -F: '($1=="ark"||$1=="root") && $2!="*" && $2!="!" && $2!="" {f=1} END{exit f?0:1}' "$M/etc/shadow" && { log "ERROR: password hash remains"; fail=1; }
+awk -F: '$1=="root" && $2!="*" && $2!="!" && $2!="" {f=1} END{exit f?0:1}' "$M/etc/shadow" && { log "ERROR: root password not locked"; fail=1; }
+awk -F: '$1=="ark" && ($2=="*" || $2=="!" || $2=="") {f=1} END{exit f?0:1}' "$M/etc/shadow" && { log "ERROR: ark default password missing"; fail=1; }
 [ -s "$M/etc/machine-id" ] && { log "ERROR: machine-id not empty"; fail=1; }
 [ "$fail" -eq 0 ] || { log "ERROR: sanitize verification failed"; exit 1; }
 
@@ -198,6 +199,44 @@ ConditionFirstBoot=
 After=systemd-remount-fs.service local-fs.target
 DROPIN
 log "host keys generated: $(ls "$M"/etc/ssh/ssh_host_*_key 2>/dev/null | wc -l)"
+
+# ---- PortMaster framework + port integration (data-free; user installs ports) ----
+PMZIP=/tmp/PortMaster.zip
+if curl -fsSL -o "$PMZIP" "https://github.com/PortsMaster/PortMaster-New/releases/latest/download/PortMaster.zip"; then
+  log "installing PortMaster -> /opt/system/Tools/PortMaster"
+  mkdir -p "$M/opt/system/Tools"
+  python3 - "$PMZIP" "$M/opt/system/Tools" <<'PY'
+import sys, zipfile
+zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])
+PY
+  CT="$M/opt/system/Tools/PortMaster/control.txt"
+  if ! grep -q 'dArkOS additions' "$CT"; then
+    cat >> "$CT" <<'PMEOF'
+
+# ---- dArkOS additions: helpers used by modern PortMaster ports ----
+CFW_NAME="${CFW_NAME:-dArkOS}"
+GPTOKEYB2="$ESUDO $controlfolder/gptokeyb -sudokill"
+pm_message() { echo "[PortMaster] $*"; }
+pm_finish() { :; }
+pm_platform_helper() { :; }
+PMEOF
+  fi
+  log "PortMaster installed; control.txt patched ($(grep -c 'GPTOKEYB2' "$CT") GPTOKEYB2 lines)"
+else
+  log "WARN: PortMaster.zip download failed; ports may not launch"
+fi
+# Route ES children (ports) through ALSA softvol so system volume keys work in-game.
+mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
+cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
+[Service]
+Environment="AUDIODEV=default"
+AUDEOF
+# Allow password login (image default ark/ark).
+mkdir -p "$M/etc/ssh/sshd_config.d"
+cat > "$M/etc/ssh/sshd_config.d/10-passwordauth.conf" <<'SSHDEOF'
+PasswordAuthentication yes
+SSHDEOF
+log "port-audio + sshd-password drop-ins written"
 
 log "=== [4/8] zero-scrub p4 free space (compress=no) ==="
 dd if=/dev/zero of="$M/.__zerofill" bs=4M status=none || true

@@ -54,10 +54,10 @@ dArkOS 镜像通过 GitHub Releases **分卷发布**，不放进 Git 仓库：
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `f090f769e43a621482fb52a1d4b8b80a7d03ccfdf771ac067e612d2eaa2face0` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,363,000 B | `43e842d05729bf2749c57e83c25df6edac6ca8fd728f2a09d5d966b398206bb8` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `a7e446fc1cc47d76d894655f96410665e86b633ecce65fe35a20549d307567e7` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,418,479,516 B | `782d2f3ae5329a32472d873ae81fae262e3333a7c8993812c55d18111b46918f` |
 
-Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,518,926,200 B）
+Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,531,042,716 B）
 和 `SHA256SUMS.txt`。**20261025 取代 20261020**：修复了烧录后 Windows 弹“修复/扫描
 dArkOS_Fat”的问题（根因是构建时 `dd` 挂载中的 p3 带进了 FAT32 dirty 位；本版清 dirty 位
 并让主/备份引导扇区一致），并把 p4 rootfs `btrfs resize max` 到分区满（约 11.76 GiB，
@@ -65,8 +65,10 @@ dArkOS_Fat”的问题（根因是构建时 `dd` 挂载中的 p3 带进了 FAT32
 启动失败、卡住首次启动的问题（改为镜像预置全新 host key）。
 
 本版本已清理设备专属数据：设备**原始的** SSH host keys、`authorized_keys`、WiFi 配置、
-账户密码哈希、日志/历史、machine-id 和 RetroArch netplay 密码。镜像已**预置一套全新的
-SSH host key**（sshd 启动必需，同原厂做法、非本机密钥）；`ark` 密码已锁定；WiFi 需重新配置。
+账户密码哈希、日志/历史、machine-id 和 RetroArch netplay 密码。镜像已**预置全新 SSH host key**；
+**默认登录 `ark`/`ark`（首次登录后请务必修改密码）**，`root` 仍锁定；WiFi 需重新配置。
+系统已集成 **PortMaster**（`/opt/system/Tools/PortMaster`）：Ports 游戏支持 SELECT+START 退出，
+音频走 softvol 跟随系统音量；autoexpand 已修复“复用卡时 `/roms` 不挂载”的问题。
 
 ### 重组分卷
 
@@ -115,7 +117,8 @@ Windows 用 `copy /b part-00+part-01 image.xz`，再用 7-Zip 解压。
 - 仓库**不包含**完整磁盘镜像、厂商内核模块/固件、APK、日志、SSH/WiFi 主机密钥、
   WiFi 密码或 userdata；发布镜像通过 Release 分卷提供。
 - 发布镜像已清理 SSH host keys、`authorized_keys`、WiFi 配置、账户密码哈希、
-  日志/历史和 machine-id；首次启动会重新生成 host keys，`ark` 密码被锁定。
+  日志/历史和 machine-id；镜像**预置全新 host key**，**默认登录 `ark`/`ark`（请首次登录后尽快修改）**，
+  `root` 仍锁定。
 - 你自己制作/首次启动后的系统镜像会包含设备专属密钥（SSH host keys、WiFi 凭据等）；
   **不要把这种镜像公开分享**，请自行重新生成。
 - 仓库不包含直接写物理磁盘的脚本；刷写请使用 Rufus DD 或 `dd`，并再次确认目标设备。
