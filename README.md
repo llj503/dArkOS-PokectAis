@@ -54,10 +54,10 @@ dArkOS 镜像通过 GitHub Releases **分卷发布**，不放进 Git 仓库：
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `a7e446fc1cc47d76d894655f96410665e86b633ecce65fe35a20549d307567e7` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,418,479,516 B | `782d2f3ae5329a32472d873ae81fae262e3333a7c8993812c55d18111b46918f` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `03365f44e4cc11c5949bb93da3de38f7c7d0e0ec5a12812f70a64df3048bdbe6` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,418,481,432 B | `beb9ba530af8b1da92942c4db60a968e783b6e41bf00b81d9571f2e0f562f5b4` |
 
-Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,531,042,716 B）
+Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,531,044,632 B）
 和 `SHA256SUMS.txt`。**20261025 取代 20261020**：修复了烧录后 Windows 弹“修复/扫描
 dArkOS_Fat”的问题（根因是构建时 `dd` 挂载中的 p3 带进了 FAT32 dirty 位；本版清 dirty 位
 并让主/备份引导扇区一致），并把 p4 rootfs `btrfs resize max` 到分区满（约 11.76 GiB，
