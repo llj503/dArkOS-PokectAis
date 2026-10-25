@@ -35,6 +35,8 @@ dArkOS 已验证：
 - 电池图标裁剪修复；RK817“永远 Charging”假状态用 shim 修正。
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
 - 首次启动自动扩展 `/roms` 分区（exFAT）。
+- 镜像 p3(FAT) 出厂即干净：清除 dirty 位、主/备份引导扇区一致，Windows 烧录后**不再弹
+  “修复/扫描 dArkOS_Fat”**（20261025 修复了 20261020 版的这个问题）。
 
 仍待处理/已知限制：
 
@@ -48,14 +50,19 @@ dArkOS 已验证：
 
 dArkOS 镜像通过 GitHub Releases **分卷发布**，不放进 Git 仓库：
 
-<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261020>
+<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261025>
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261020-autoexpand-sanitized.img` | 13,019,137,024 B | `2d89014a51db3770c5c98f6fc09e1836d80045501f910a4689dc8b5f903974e5` |
-| `pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz` | `2975954400` B | `63fbf74521be7655b48cc04830115f53e6a9bcbe6d13488bd088840f1edfcc25` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `d2916f1c0439496ff5082f25f1be79dedd9a2b2198a1ea729c80ede56cae1537` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,426,216 B | `a9ab0594e77dd6a0a0bb2ea11f3551be218c0aad26b6b5fb9f094e1c0b300b67` |
 
-Release 资产包括 `.img.xz.part-00`、`.img.xz.part-01` 和 `SHA256SUMS.txt`。
+Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,518,989,416 B）
+和 `SHA256SUMS.txt`。**20261025 取代 20261020**：修复了烧录后 Windows 弹“修复/扫描
+dArkOS_Fat”的问题（根因是构建时 `dd` 挂载中的 p3 带进了 FAT32 dirty 位；本版清 dirty 位
+并让主/备份引导扇区一致），并把 p4 rootfs `btrfs resize max` 到分区满（约 11.76 GiB，
+吃掉尾部 slack）、空闲空间填零擦除。
+
 本版本已清理设备专属数据：SSH host keys、`authorized_keys`、WiFi 配置、账户密码
 哈希、日志/历史、machine-id 和 RetroArch netplay 密码。首次启动会重新生成 SSH
 host keys；`ark` 密码已锁定；WiFi 需重新配置。
@@ -65,11 +72,11 @@ host keys；`ark` 密码已锁定；WiFi 需重新配置。
 Linux / macOS：
 
 ```bash
-cat pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz.part-* \
-  > pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz
-sha256sum pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz
-xz -d pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz
-sha256sum pocketAis-dArkOS-20261020-autoexpand-sanitized.img
+cat pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz.part-* \
+  > pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz
+sha256sum pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz
+xz -d pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz
+sha256sum pocketAis-dArkOS-20261025-autoexpand-sanitized.img
 ```
 
 Windows 用 `copy /b part-00+part-01 image.xz`，再用 7-Zip 解压。

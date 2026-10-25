@@ -29,15 +29,17 @@
 
 发布镜像通过 GitHub Release 分卷提供：
 
-<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261020>
+<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261025>
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261020-autoexpand-sanitized.img` | 13,019,137,024 B | `2d89014a51db3770c5c98f6fc09e1836d80045501f910a4689dc8b5f903974e5` |
-| `pocketAis-dArkOS-20261020-autoexpand-sanitized.img.xz` | `2975954400` B | `63fbf74521be7655b48cc04830115f53e6a9bcbe6d13488bd088840f1edfcc25` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `d2916f1c0439496ff5082f25f1be79dedd9a2b2198a1ea729c80ede56cae1537` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,426,216 B | `a9ab0594e77dd6a0a0bb2ea11f3551be218c0aad26b6b5fb9f094e1c0b300b67` |
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
 刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
+**20261025 取代 20261020**：修复烧录后 Windows 弹“修复/扫描 dArkOS_Fat”（p3 FAT dirty 位），
+详见下面“镜像组装要点”的 20261025 小节。
 
 ### 发布清理流程
 
@@ -105,6 +107,37 @@ kernel_config.txt                 # AisOS 内核配置（参考）
 
 `fix_gpt_20261020.py` 用于修复“镜像启动后进入内置 eMMC 系统”的问题：恢复 p1/p2
 的特殊类型 GUID、p3 的 `LegacyBIOSBootable` 属性，并重算主/备份 GPT CRC。
+
+### 20261025 版：修复 Windows 烧录后弹“修复/扫描 dArkOS_Fat”
+
+**根因**：`build_image_20261020.sh` 用 `dd if=/dev/mmcblk1` 在 `/boot`(p3) **挂载读写**
+时裸拷扇区。Linux vfat 驱动一旦写过该 FAT，就把 FAT32 引导扇区 offset `0x41` 的
+dirty 位置 1；`dd` 把这个“脏”标志原样打进镜像。烧录后插入 Windows，Windows 检测到
+FAT 脏 → 弹“扫描并修复 dArkOS_Fat”。此外镜像 p3 的主引导扇区 `0x41=01` 而备份引导
+扇区（sector 6）`0x41=00`，主/备份不一致也会被 chkdsk 判定需要修复。（p4 btrfs、
+p5 占位虽是 Basic Data 类型，但 Windows 不给盘符、不弹窗，无需改动。）
+
+**修复**（`image_build/build_image_20261025.sh`，在设备上执行）：
+
+1. dd p1–p4 + 256 MiB 的 p5 占位 + 截断，`sgdisk` 重建 GPT（占位类型码）。
+2. **p4 净化就地做**：镜像里的 p4 是运行根的文件级副本、btrfs FSID 与活根相同，
+   直接挂载会报 `duplicate device`(EEXIST)；先 `btrfstune -f -u` 改写镜像 p4 的
+   FSID（**LABEL=ROOTFS 保留**；root 由 fstab/extlinux 的 `/dev/mmcblk1p4` **路径**
+   定位，不依赖 UUID，故改 FSID 对启动安全），再 `mount -o rw,compress=no`。
+3. `btrfs filesystem resize max` 把 p4 从 7.81 GiB 扩到分区满 11.76 GiB（吃掉尾部
+   约 3.95 GiB slack，顺带清除其中可能的陈旧数据），删除 SSH host keys /
+   authorized_keys / WiFi 配置 / machine-id / 日志历史 / RetroArch netplay 密码，
+   锁定 `ark`/`root` 密码，校验无密钥残留后 **填零擦除全部空闲空间**（`compress=no`
+   确保零真的落盘覆盖被删数据的块）。
+4. **清理 p3**：loop 挂载删除首次启动标记与 `authorized_keys`，卸载后把 p3 主/备份
+   引导扇区 offset `0x41` 都写 `0x00`（清 dirty 位并让主/备份一致），读回校验为 0。
+5. `fix_gpt_20261020.py` 恢复 p1/p2 Rockchip 类型 GUID、p3 `LegacyBIOSBootable`(0x4)、
+   重算 GPT CRC —— 与运行设备逐字段一致。
+6. `sgdisk -v` 校验、只读挂载 p4 复核关键文件、`sha256sum` 出镜像校验。
+
+脚本带 `RESUME=1` 模式：若已存在正确大小的 raw，则跳过 dd+sgdisk，从 p4 净化续跑
+（失败重试无需重拷 12.7 GiB，也不额外占空间）。
+
 
 ## 电池与 USB
 
