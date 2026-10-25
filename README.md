@@ -54,18 +54,19 @@ dArkOS 镜像通过 GitHub Releases **分卷发布**，不放进 Git 仓库：
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `d2916f1c0439496ff5082f25f1be79dedd9a2b2198a1ea729c80ede56cae1537` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,426,216 B | `a9ab0594e77dd6a0a0bb2ea11f3551be218c0aad26b6b5fb9f094e1c0b300b67` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `f090f769e43a621482fb52a1d4b8b80a7d03ccfdf771ac067e612d2eaa2face0` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,363,000 B | `43e842d05729bf2749c57e83c25df6edac6ca8fd728f2a09d5d966b398206bb8` |
 
-Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,518,989,416 B）
+Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,518,926,200 B）
 和 `SHA256SUMS.txt`。**20261025 取代 20261020**：修复了烧录后 Windows 弹“修复/扫描
 dArkOS_Fat”的问题（根因是构建时 `dd` 挂载中的 p3 带进了 FAT32 dirty 位；本版清 dirty 位
 并让主/备份引导扇区一致），并把 p4 rootfs `btrfs resize max` 到分区满（约 11.76 GiB，
-吃掉尾部 slack）、空闲空间填零擦除。
+吃掉尾部 slack）、空闲空间填零擦除。另修复净化时删掉 SSH host key 导致 `ssh.service`
+启动失败、卡住首次启动的问题（改为镜像预置全新 host key）。
 
-本版本已清理设备专属数据：SSH host keys、`authorized_keys`、WiFi 配置、账户密码
-哈希、日志/历史、machine-id 和 RetroArch netplay 密码。首次启动会重新生成 SSH
-host keys；`ark` 密码已锁定；WiFi 需重新配置。
+本版本已清理设备专属数据：设备**原始的** SSH host keys、`authorized_keys`、WiFi 配置、
+账户密码哈希、日志/历史、machine-id 和 RetroArch netplay 密码。镜像已**预置一套全新的
+SSH host key**（sshd 启动必需，同原厂做法、非本机密钥）；`ark` 密码已锁定；WiFi 需重新配置。
 
 ### 重组分卷
 

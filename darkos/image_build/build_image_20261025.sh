@@ -173,10 +173,31 @@ sync
 fail=0
 if [ -n "$PSK_VALUE" ]; then c=$(grep -rIlF -- "$PSK_VALUE" "$M" 2>/dev/null | grep -c . || true); log "psk_matches=$c"; [ "$c" -eq 0 ] || fail=1; fi
 if [ -n "$SSID_BASE" ]; then c=$(grep -rIlF -- "$SSID_BASE" "$M" 2>/dev/null | grep -c . || true); log "ssid_matches=$c"; [ "$c" -eq 0 ] || fail=1; fi
-find "$M/etc" "$M/home" "$M/root" -type f -name 'ssh_host_*' 2>/dev/null | grep -q . && { log "ERROR: ssh host keys remain"; fail=1; }
 awk -F: '($1=="ark"||$1=="root") && $2!="*" && $2!="!" && $2!="" {f=1} END{exit f?0:1}' "$M/etc/shadow" && { log "ERROR: password hash remains"; fail=1; }
 [ -s "$M/etc/machine-id" ] && { log "ERROR: machine-id not empty"; fail=1; }
 [ "$fail" -eq 0 ] || { log "ERROR: sanitize verification failed"; exit 1; }
+
+# The device's original SSH host keys were removed above. Stock dArkOS shipped
+# pre-generated keys and sshd refuses to start without them, which left
+# ssh.service failing and blocked first boot (observed on the first 20261025
+# flash). Generate a fresh set, and neutralise sshd-keygen's fragile
+# ConditionFirstBoot (it never fires once machine-id has been regenerated) so
+# keys can be recreated if they are ever missing.
+log "generating fresh SSH host keys"
+rm -f "$M"/etc/ssh/ssh_host_*
+ssh-keygen -q -t ed25519     -f "$M/etc/ssh/ssh_host_ed25519_key" -N '' -C 'root@pocketais'
+ssh-keygen -q -t ecdsa       -f "$M/etc/ssh/ssh_host_ecdsa_key"   -N '' -C 'root@pocketais'
+ssh-keygen -q -t rsa -b 3072 -f "$M/etc/ssh/ssh_host_rsa_key"     -N '' -C 'root@pocketais'
+chown 0:0 "$M"/etc/ssh/ssh_host_* 2>/dev/null || true
+chmod 600 "$M"/etc/ssh/ssh_host_ed25519_key "$M"/etc/ssh/ssh_host_ecdsa_key "$M"/etc/ssh/ssh_host_rsa_key
+chmod 644 "$M"/etc/ssh/ssh_host_ed25519_key.pub "$M"/etc/ssh/ssh_host_ecdsa_key.pub "$M"/etc/ssh/ssh_host_rsa_key.pub
+mkdir -p "$M/etc/systemd/system/sshd-keygen.service.d"
+cat > "$M/etc/systemd/system/sshd-keygen.service.d/10-ensure.conf" <<'DROPIN'
+[Unit]
+ConditionFirstBoot=
+After=systemd-remount-fs.service local-fs.target
+DROPIN
+log "host keys generated: $(ls "$M"/etc/ssh/ssh_host_*_key 2>/dev/null | wc -l)"
 
 log "=== [4/8] zero-scrub p4 free space (compress=no) ==="
 dd if=/dev/zero of="$M/.__zerofill" bs=4M status=none || true
@@ -197,7 +218,9 @@ ES_SIZE=$(stat -c %s "$V/usr/bin/emulationstation/emulationstation")
 for f in /opt/ngp-panel/ngp-wifi-gui /opt/ngp-panel/ngp-panel-gui "/opt/system/网络设置.sh" /usr/local/sbin/pocketais-usb-role-watch /usr/local/sbin/pocketais-autoexpand; do
   test -e "$V$f" && log "OK  $f" || { log "ERROR: missing $f in image"; exit 1; }
 done
-find "$V/etc/ssh" -name 'ssh_host_*' 2>/dev/null | grep -q . && { log "ERROR: host keys in final p4"; exit 1; }
+for kt in ed25519 ecdsa rsa; do
+  test -s "$V/etc/ssh/ssh_host_${kt}_key" || { log "ERROR: missing ssh host key $kt in final p4"; exit 1; }
+done
 [ -s "$V/etc/machine-id" ] && { log "ERROR: machine-id non-empty in final p4"; exit 1; }
 log "ES size=$ES_SIZE; p4 verify OK"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot

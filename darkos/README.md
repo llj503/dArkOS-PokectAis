@@ -33,8 +33,8 @@
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `d2916f1c0439496ff5082f25f1be79dedd9a2b2198a1ea729c80ede56cae1537` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,426,216 B | `a9ab0594e77dd6a0a0bb2ea11f3551be218c0aad26b6b5fb9f094e1c0b300b67` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `f090f769e43a621482fb52a1d4b8b80a7d03ccfdf771ac067e612d2eaa2face0` |
+| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,406,363,000 B | `43e842d05729bf2749c57e83c25df6edac6ca8fd728f2a09d5d966b398206bb8` |
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
 刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
@@ -53,9 +53,12 @@
 - `/etc/machine-id`、`/var/lib/dbus/machine-id`
 - shell history、日志、缓存、RetroArch netplay 密码
 
-首次启动会由 `sshd-keygen.service` 重新生成 SSH host keys；`ark` 密码已锁定，
-可在 p3 根目录放 `authorized_keys` 供 firstboot 安装，或在设备上设置密码。WiFi
-需重新配置。
+首次启动会由 `sshd-keygen.service` 重新生成 SSH host keys——**注意：这条在 20261025
+首测时是坏的**（machine-id 被清空后 systemd 会抢先重建它，`ConditionFirstBoot` 不再成立，
+sshd-keygen 被跳过 → sshd 无 host key → `ssh.service` 启动失败并卡住首次启动）。现改为
+**镜像里预置一套全新的 host key**（并加了 drop-in 清掉易失效的 ConditionFirstBoot 兜底），
+`ark` 密码已锁定，可在 p3 根目录放 `authorized_keys` 供 firstboot 安装，或在设备上设置密码。
+WiFi 需重新配置。
 
 ## 目录
 
