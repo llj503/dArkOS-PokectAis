@@ -15,7 +15,7 @@
 - EmulationStation 单游戏高级菜单：进入游戏前可切换模拟器/核心。
 - 电池图标裁剪修复；RK817“永远 Charging”假状态用 shim 修正。
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
-- RK817 扬声器音频：开机恢复 ALSA 状态后重新置位 HP 路由（`Headphone` on、`HP gain` 3）。
+- RK817 扬声器：开机恢复 ALSA 状态后重新置位 HP 路由（Headphone on、HP gain 3）。
 - 首次启动自动扩展 `/roms` 分区（exFAT）。
 
 仍待处理/已知限制：
@@ -39,9 +39,8 @@
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
 刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
-**20261026 取代 20261025/20261020**：新增 RK817 扬声器音频修复（开机恢复 ALSA 状态
-后重新置位 HP 路由，避免保存的状态静音），PortMaster 升级并修正 GUI A/B（A=确认）；
-继承 20261025 的 p3 FAT dirty 位修复。20261025 Release 分卷不完整，已被取代。
+这版主要修声音（开机恢复 ALSA 状态后重新置位 HP 路由），PortMaster 更新并改了 GUI 的
+A/B。上一版的 p3 FAT dirty 位修复还在。20261025 的 Release 已删除。
 
 ### 发布清理流程
 

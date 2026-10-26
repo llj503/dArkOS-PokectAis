@@ -34,8 +34,8 @@ dArkOS 已验证：
 - EmulationStation 单游戏高级菜单：进入游戏前可切换模拟器/核心。
 - 电池图标裁剪修复；RK817“永远 Charging”假状态用 shim 修正。
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
-- RK817 扬声器音频：开机恢复 ALSA 状态后自动重新置位 HP 路由（`Headphone` on、
-  `HP Output Gain` 3），ES/RetroArch/Ports 均有声；保存的状态不会再让扬声器静音。
+- RK817 扬声器：开机恢复 ALSA 状态后重新置位 HP 路由（Headphone on、HP gain 3），
+  ES/RetroArch/Ports 都有声。
 - 首次启动自动扩展 `/roms` 分区（exFAT）。
 - 镜像 p3(FAT) 出厂即干净：清除 dirty 位、主/备份引导扇区一致，Windows 烧录后**不再弹
   “修复/扫描 dArkOS_Fat”**（20261025 修复了 20261020 版的这个问题）。
@@ -59,21 +59,21 @@ dArkOS 镜像通过 GitHub Releases **分卷发布**，不放进 Git 仓库：
 | `pocketAis-dArkOS-20261026-autoexpand-sanitized.img` | 13,019,137,024 B | `bd3043e745393cb4f580afb11c9a4f809096fa1b325e6cac88cf343201feafa3` |
 | `pocketAis-dArkOS-20261026-autoexpand-sanitized.img.xz` | 3,555,008,556 B | `48b7eae785968ebf328c54ffa0f16ead5583ac47312ea7366cb936c20e4378d3` |
 
-Release 资产包括 `.img.xz.part-00`（1,887,436,800 B）、`.img.xz.part-01`（1,667,571,756 B）
-和 `SHA256SUMS.txt`。**20261026 取代 20261025/20261020**：新增 RK817 扬声器音频修复
-（开机恢复 ALSA 状态后重新置位 `Playback Path=HP`、`Headphone=on`、`HP Output Gain=3`，
-避免保存的状态把 HP 输出静音），PortMaster 升级到构建时最新版并修正 GUI 的 A/B 映射
-（A=确认）。继承 20261025 的修复：烧录后 Windows 不再弹“修复/扫描 dArkOS_Fat”
-（清 p3 FAT dirty 位、主/备份引导扇区一致），p4 rootfs `btrfs resize max` 到分区满
-（约 11.76 GiB）并擦除空闲空间，以及预置全新 SSH host key 修复首次启动卡住的问题。
-20261025 Release 的 `part-01` 未上传、无法重组，已被本版取代。
+分卷为 `.part-00`（1,887,436,800 B）、`.part-01`（1,667,571,756 B）和 `SHA256SUMS.txt`。
+
+这版主要修声音：上次关机保存的 ALSA 状态里 `Headphone Switch` 是关的，开机恢复后
+扬声器不响（ES、RetroArch、Ports 全静音）。现在 `spktoggle.sh` 会在恢复后再设一遍
+HP 路由和 Headphone/Gain。PortMaster 也更新到最新版，GUI 改成 A 确认、B 返回。
+上一版的 p3 dirty 位、p4 扩容、SSH host key 修复都在。
+
+20261025 的 Release 少了 part-01，已删除。
 
 本版本已清理设备专属数据：设备**原始的** SSH host keys、`authorized_keys`、WiFi 配置、
 账户密码哈希、日志/历史、machine-id 和 RetroArch netplay 密码。镜像已**预置全新 SSH host key**；
 **默认登录 `ark`/`ark`（首次登录后请务必修改密码）**，`root` 仍锁定；WiFi 需重新配置。
-系统已集成 **PortMaster**（`/opt/system/Tools/PortMaster`）：Ports 游戏支持 SELECT+START 退出，
-音频走 softvol 跟随系统音量；PortMaster GUI 的 A/B 已按本机手柄映射改为 **A=确认**；
-autoexpand 已修复“复用卡时 `/roms` 不挂载”的问题。
+系统已集成 PortMaster（`/opt/system/Tools/PortMaster`）：Ports 支持 SELECT+START 退出，
+音频跟随系统音量，GUI 的 A/B 改成 A 确认、B 返回；autoexpand 也修了复用卡时
+`/roms` 不挂载的问题。
 
 ### 重组分卷
 
