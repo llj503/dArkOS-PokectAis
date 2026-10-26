@@ -1,5 +1,5 @@
 #!/bin/bash
-# build_image_20261025.sh -- runs ON the Pocket AIS device as root.
+# build_image_20261026.sh -- runs ON the Pocket AIS device as root.
 # Builds a sanitized, bootable, Windows-clean dArkOS TF image.
 #
 # Fixes vs the 20261020 image:
@@ -14,9 +14,9 @@
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-IMG=/roms/pocketAis-dArkOS-20261025-autoexpand-sanitized.img
-LOG=/roms/pocketais-image-build-20261025.log
-STATUS=/roms/pocketais-image-build-20261025.status
+IMG=/roms/pocketAis-dArkOS-20261026-autoexpand-sanitized.img
+LOG=/roms/pocketais-image-build-20261026.log
+STATUS=/roms/pocketais-image-build-20261026.status
 SRC=/dev/mmcblk1
 
 # fix_gpt_20261020.py: prefer the copy next to this script, else /roms.
@@ -54,7 +54,7 @@ finish(){ rc=$?; trap - EXIT
   log "exit rc=$rc"; exit "$rc"; }
 trap finish EXIT
 
-log "=== Pocket AIS image build 20261025 ==="
+log "=== Pocket AIS image build 20261026 ==="
 log "img_bytes=$IMG_BYTES copy_sectors=$COPY_SECTORS p4_off=$P4_OFF p4_len=$P4_LEN"
 
 [ $((COUNT * 8192)) -eq "$COPY_SECTORS" ] || { log "ERROR: p5 start not 4M aligned"; exit 1; }
@@ -123,6 +123,17 @@ fi
 mkdir -p /mnt/imgp4
 mount -o rw,compress=no "$LOOP4" /mnt/imgp4
 M=/mnt/imgp4
+
+# Pocket AIS speaker route fix. The saved ALSA state can restore Headphone
+# Switch off / HP gain 0 at boot, which mutes the RK817 HP output (the speaker
+# is driven from HP through the external amplifier). This spktoggle copy
+# re-asserts Playback Path=HP, Headphone=on and HP gain 3 after any restore.
+if [ -f "$SCRIPT_DIR/spktoggle.sh" ]; then
+  install -m 0755 "$SCRIPT_DIR/spktoggle.sh" "$M/usr/local/bin/spktoggle.sh"
+  log "installed spktoggle.sh (speaker route fix)"
+else
+  log "WARN: spktoggle.sh not found next to the build script"
+fi
 
 # grow btrfs to fill the whole p4 partition (absorbs the ~3.95 GiB slack)
 btrfs filesystem resize max "$M" && log "p4 btrfs resized to max" || log "WARN resize max failed"
@@ -225,6 +236,39 @@ PMEOF
 else
   log "WARN: PortMaster.zip download failed; ports may not launch"
 fi
+# Pocket AIS: the pad reports its labelled A as SDL controller button B and vice
+# versa, so PortMaster's GUI (pySDL2gui) would show confirm/back swapped. Swap the
+# two entries inside pylibs.zip; idempotent if upstream ever ships them swapped.
+PM_PYLIBS="$M/opt/system/Tools/PortMaster/pylibs.zip"
+if [ -f "$PM_PYLIBS" ]; then
+  if python3 - "$PM_PYLIBS" <<'PY'
+import sys, zipfile, os
+p = sys.argv[1]; tmp = p + ".tmp"
+with zipfile.ZipFile(p) as src:
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename.endswith("pySDL2gui.py"):
+                s = data.decode("utf-8")
+                s = s.replace("SDL_CONTROLLER_BUTTON_A: 'A'", "SDL_CONTROLLER_BUTTON_A: '__SWAP__'")
+                s = s.replace("SDL_CONTROLLER_BUTTON_B: 'B'", "SDL_CONTROLLER_BUTTON_B: 'A'")
+                s = s.replace("SDL_CONTROLLER_BUTTON_A: '__SWAP__'", "SDL_CONTROLLER_BUTTON_A: 'B'")
+                data = s.encode("utf-8")
+            dst.writestr(item, data)
+os.replace(tmp, p)
+with zipfile.ZipFile(p) as z:
+    name = next((n for n in z.namelist() if n.endswith("pySDL2gui.py")), None)
+    t = z.read(name).decode("utf-8") if name else ""
+ok = "SDL_CONTROLLER_BUTTON_A: 'B'" in t and "SDL_CONTROLLER_BUTTON_B: 'A'" in t
+print("PM A/B swapped:", ok)
+sys.exit(0 if ok else 1)
+PY
+  then log "PortMaster A/B mapped for Pocket AIS (pylibs.zip patched)"
+  else log "WARN: PortMaster A/B patch failed; GUI confirm/back may be swapped"
+  fi
+else
+  log "WARN: PortMaster pylibs.zip not found; A/B not patched"
+fi
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
 cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
@@ -295,5 +339,5 @@ log "=== final GPT verify ==="
 for n in 1 2 3 4 5; do echo "-- part $n --"; /usr/sbin/sgdisk -i $n "$IMG" | grep -iE 'GUID code|unique GUID|Attribute|name'; done
 log "=== ls image ==="; ls -l "$IMG"
 log "=== sha256 (may take a few minutes) ==="
-sha256sum "$IMG" | tee /roms/pocketAis-dArkOS-20261025-autoexpand-sanitized.img.sha256
+sha256sum "$IMG" | tee /roms/pocketAis-dArkOS-20261026-autoexpand-sanitized.img.sha256
 log "=== image build complete ==="

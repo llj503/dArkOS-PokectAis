@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Script used to manually toggle between headphone jack and speaker
+# Can be triggered from a key daemon like ogage
+
+spktoggle=$(amixer | grep "Item0: 'SPK'")
+
+if [ "$(cat /home/ark/.config/.DEVICE)" == "RGB30" ] || [ "$(cat /home/ark/.config/.DEVICE)" == "RK2023" ]; then
+  presses="spktogglepress1 spktogglepress2 spktogglepress3 spktogglepress4 spktogglepress5"
+
+  if [[ ! -z $(amixer | grep "Item0: 'OFF'") ]]; then
+    amixer -q sset 'Playback Path' HP
+  fi
+
+  if [ -z "$spktoggle" ]
+  then
+    for press in $presses
+    do
+      if [ -z $(find "/dev/shm/${press}" -cmin -0.05  2>/dev/null) ]; then
+        touch /dev/shm/${press}
+        exit 0
+      fi
+    done
+  fi
+
+  if [ ! -z $(find "/dev/shm/spktogglepress5" -cmin -0.05  2>/dev/null) ] || [ ! -z "$spktoggle" ]; then
+    if [ -z "$spktoggle" ]
+    then
+        amixer -q sset 'Playback Path' SPK
+        rm -f /dev/shm/spktogglepress*
+    else
+        amixer -q sset 'Playback Path' HP
+        rm -f /dev/shm/spktogglepress*
+    fi
+  fi
+else
+  if [ -z "$spktoggle" ]
+  then
+    if [ "$(cat /home/ark/.config/.DEVICE)" == "RG56PRO" ] || [ "$(cat /home/ark/.config/.DEVICE)" == "RG43H" ]; then
+      # RK3562 devices: speaker is driven via HP output + external amplifier (hp-ctl-gpios).
+      # Setting SPK disables the ext amp GPIO, cutting audio.
+      amixer -q sset 'Playback Path' HP
+    elif [ "$(cat /home/ark/.config/.DEVICE)" != "A10MINI" ]; then
+      amixer -q sset 'Playback Path' SPK
+    else
+      amixer -q sset 'Playback Path' SPK_HP
+    fi
+  fi
+  if [ -f "/var/local/asound.state" ]
+  then
+      /usr/sbin/alsactl restore -f /var/local/asound.state
+	  sudo rm -f /var/local/asound.state
+  fi
+  if [ "$(cat /home/ark/.config/.DEVICE)" == "RG56PRO" ] || [ "$(cat /home/ark/.config/.DEVICE)" == "RG43H" ]; then
+    # Pocket AIS: a restored or saved ALSA state can leave Headphone Switch
+    # off or HP gain at 0, which mutes the RK817 HP output. Assert the
+    # speaker route every time this script runs (cron @reboot and hotkey).
+    amixer -q sset 'Playback Path' HP
+    amixer -q sset 'Headphone' on
+    amixer -q sset 'HP Output Gain' 3
+  fi
+fi
+

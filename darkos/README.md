@@ -15,6 +15,7 @@
 - EmulationStation 单游戏高级菜单：进入游戏前可切换模拟器/核心。
 - 电池图标裁剪修复；RK817“永远 Charging”假状态用 shim 修正。
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
+- RK817 扬声器音频：开机恢复 ALSA 状态后重新置位 HP 路由（`Headphone` on、`HP gain` 3）。
 - 首次启动自动扩展 `/roms` 分区（exFAT）。
 
 仍待处理/已知限制：
@@ -29,17 +30,18 @@
 
 发布镜像通过 GitHub Release 分卷提供：
 
-<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261025>
+<https://github.com/llj503/dArkOS-PokectAis/releases/tag/dArkOS-20261026>
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img` | 13,019,137,024 B | `03365f44e4cc11c5949bb93da3de38f7c7d0e0ec5a12812f70a64df3048bdbe6` |
-| `pocketAis-dArkOS-20261025-autoexpand-sanitized.img.xz` | 3,418,481,432 B | `beb9ba530af8b1da92942c4db60a968e783b6e41bf00b81d9571f2e0f562f5b4` |
+| `pocketAis-dArkOS-20261026-autoexpand-sanitized.img` | 13,019,137,024 B | `bd3043e745393cb4f580afb11c9a4f809096fa1b325e6cac88cf343201feafa3` |
+| `pocketAis-dArkOS-20261026-autoexpand-sanitized.img.xz` | 3,555,008,556 B | `48b7eae785968ebf328c54ffa0f16ead5583ac47312ea7366cb936c20e4378d3` |
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
 刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
-**20261025 取代 20261020**：修复烧录后 Windows 弹“修复/扫描 dArkOS_Fat”（p3 FAT dirty 位），
-详见下面“镜像组装要点”的 20261025 小节。
+**20261026 取代 20261025/20261020**：新增 RK817 扬声器音频修复（开机恢复 ALSA 状态
+后重新置位 HP 路由，避免保存的状态静音），PortMaster 升级并修正 GUI A/B（A=确认）；
+继承 20261025 的 p3 FAT dirty 位修复。20261025 Release 分卷不完整，已被取代。
 
 ### 发布清理流程
 
@@ -59,7 +61,8 @@ sshd-keygen 被跳过 → sshd 无 host key → `ssh.service` 启动失败并卡
 **镜像里预置一套全新的 host key**（并加了 drop-in 清掉易失效的 ConditionFirstBoot 兜底）；
 **默认登录 `ark`/`ark`（首次登录后请务必修改）**，`root` 仍锁定。WiFi 需重新配置。
 系统已集成 **PortMaster**（`/opt/system/Tools/PortMaster`）：Ports 游戏 SELECT+START 退出、
-音频走 softvol 跟随系统音量；`/opt/system/修改密码.sh` 已改为 `sudo chpasswd`（锁定账号也能设密码）。
+音频走 softvol 跟随系统音量；GUI 的 A/B 映射已按本机手柄改为 A=确认；
+`/opt/system/修改密码.sh` 已改为 `sudo chpasswd`（锁定账号也能设密码）。
 WiFi 需重新配置。
 
 ## 目录
@@ -67,10 +70,13 @@ WiFi 需重新配置。
 ```text
 image_build/
   build_image.sh                  # 早期版本的镜像组装脚本
-  build_image_20261020.sh         # 最终镜像组装（p1-p4 + p5 占位 + GPT + p3 清理）
+  build_image_20261020.sh         # 20261020 镜像组装（p1-p4 + p5 占位 + GPT + p3 清理）
+  build_image_20261026.sh         # 当前镜像组装（音频补丁 + PortMaster A/B）
+  spktoggle.sh                    # 开机恢复 HP 路由（Headphone on / HP gain 3）
   fix_gpt_20261020.py             # 恢复 p1/p2 类型 GUID、p3 可启动标志、GPT CRC
   fix_suspend_20261020.py         # 修复 GPU governor 路径、睡眠背光、ES 屏保
   pocketais-autoexpand.sh         # 首次启动扩展 /roms
+  spktoggle.sh                    # 开机恢复 HP 路由（Headphone on / HP gain 3）
   pocketais-autoexpand.service
   sanitize_p4.sh                  # 清理 rootfs 并重建干净 BTRFS
   finalize_release.sh             # 锁定账户密码、写入 p3/p4、校验 raw
@@ -102,7 +108,7 @@ kernel_config.txt                 # AisOS 内核配置（参考）
 
 ## 镜像组装要点
 
-`build_image_20261020.sh` 在设备上执行，主要步骤：
+`build_image_20261026.sh` 在设备上执行，主要步骤：
 
 1. 读取 p5 起始扇区，确定镜像总大小（p1-p4 + 256 MiB 的 p5 占位 + 备份 GPT）。
 2. 停止 EmulationStation，复制 p1-p4，写入 p5 占位并截断镜像。
@@ -122,7 +128,7 @@ FAT 脏 → 弹“扫描并修复 dArkOS_Fat”。此外镜像 p3 的主引导�
 扇区（sector 6）`0x41=00`，主/备份不一致也会被 chkdsk 判定需要修复。（p4 btrfs、
 p5 占位虽是 Basic Data 类型，但 Windows 不给盘符、不弹窗，无需改动。）
 
-**修复**（`image_build/build_image_20261025.sh`，在设备上执行）：
+**修复**（`image_build/build_image_20261026.sh`，在设备上执行；即 20261025 流程）：
 
 1. dd p1–p4 + 256 MiB 的 p5 占位 + 截断，`sgdisk` 重建 GPT（占位类型码）。
 2. **p4 净化就地做**：镜像里的 p4 是运行根的文件级副本、btrfs FSID 与活根相同，
@@ -142,6 +148,26 @@ p5 占位虽是 Basic Data 类型，但 Windows 不给盘符、不弹窗，无�
 
 脚本带 `RESUME=1` 模式：若已存在正确大小的 raw，则跳过 dd+sgdisk，从 p4 净化续跑
 （失败重试无需重拷 12.7 GiB，也不额外占空间）。
+
+### 20261026 版：RK817 扬声器音频 + PortMaster A/B
+
+**现象**：开机后 EmulationStation、RetroArch、Ports 全部无声，但 `Playback Path` 已由
+`spktoggle.sh` 的 @reboot 任务设为 HP。
+
+**根因**：`spktoggle.sh` 先设置 HP 路径，随后 `alsactl restore` 用上次关机保存的状态
+覆盖混音器；保存的状态里 `Headphone Switch=false`、`HP Output Gain=0`，RK817 的 HP
+输出被关闭（Pocket AIS 的扬声器由 HP 输出经外部功放驱动，`hp-ctl` GPIO115）。
+
+**修复**：`image_build/spktoggle.sh` 在恢复状态之后重新写入 `Playback Path=HP`、
+`Headphone=on`、`HP Output Gain=3`；构建脚本把它安装到镜像的
+`/usr/local/bin/spktoggle.sh`，开机与热键调用都会生效。
+
+PortMaster 在构建时下载最新版，构建脚本会把 `pylibs.zip` 内 `pySDL2gui.py` 的 A/B
+映射交换为 **A=确认、B=返回**（本机手柄的物理 A 对应 SDL 的 B）。
+
+Ports 音频：普通端口走 `/etc/asound.conf` 的 softvol → dmix；dmix 在 ES 播放启动音时
+偶发 `unable to open slave`。特定端口（如极品飞车 U2）可在启动脚本里用
+`ALSA_CONFIG_PATH` 指向仅含 `plug → hw:0,0` 的配置，绕开 dmix。
 
 
 ## 电池与 USB
