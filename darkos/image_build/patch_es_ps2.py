@@ -26,7 +26,7 @@ if 'name="armsx2"' not in block:
         '\n\t\t\t<emulator name="armsx2">\n\t\t\t</emulator>'
         '\n\t\t\t<emulator name="armsx2-stock">\n\t\t\t</emulator>'
     )
-    block, n = emu_re.subn(lambda mo: mo.group(1) + extra, block, count=1)
+    block, n = emu_re.subn(lambda mo: extra + mo.group(1), block, count=1)
     if n != 1:
         sys.exit("standalone-pcsx2sa emulator entry not recognized")
 

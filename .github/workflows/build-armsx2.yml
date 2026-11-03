@@ -31,6 +31,12 @@ jobs:
           path: armsx2
           fetch-depth: 1
 
+      - name: Apply pause-menu main-loop fix
+        run: |
+          sed -i 's/if (!start_in_fsui)$/if (!start_in_fsui \&\& !FullscreenUI::HasActiveWindow())/' \
+            armsx2/pcsx2-sdl/Main.cpp
+          grep -n "HasActiveWindow" armsx2/pcsx2-sdl/Main.cpp
+
       - name: Install build packages
         run: |
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null

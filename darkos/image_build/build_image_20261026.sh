@@ -359,19 +359,23 @@ chmod 644 "$M/opt/malisx2/malisx2.json"
 chown -R 0:0 "$M/opt/armsx2" "$M/opt/malisx2"
 python3 "$SCRIPT_DIR/patch_es_ps2.py" "$M/etc/emulationstation/es_systems.cfg"
 
-# PS2 hotkeys: Select+Y opens the pause menu; Select+X toggles fullscreen.
+# PS2 hotkeys: Select+L2 opens the pause menu; Select+L3 toggles fullscreen.
 PCSX2_TMPL="$M/opt/pcsx2/templates/PCSX2.ini"
 if [ -f "$PCSX2_TMPL" ]; then
   python3 - "$PCSX2_TMPL" <<'PY'
 import sys
 p = sys.argv[1]
 out = []
+out = []
+inserted = False
 for line in open(p, encoding="utf-8"):
-    if line.startswith("ToggleFullscreen = "):
-        line = "ToggleFullscreen = SDL-0/Back & SDL-0/FaceWest\n"
-    elif line.startswith("OpenPauseMenu = "):
-        line = "OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth\n"
+    if line.startswith("ToggleFullscreen") or line.startswith("OpenPauseMenu"):
+        continue
     out.append(line)
+    if line.strip() == "[Hotkeys]" and not inserted:
+        out.append("ToggleFullscreen = SDL-0/Back & SDL-0/LeftStick\n")
+        out.append("OpenPauseMenu = SDL-0/Back & SDL-0/+LeftTrigger\n")
+        inserted = True
 open(p, "w", encoding="utf-8", newline="").writelines(out)
 PY
 fi
@@ -449,7 +453,7 @@ grep -q 'name="armsx2"' "$V/etc/emulationstation/es_systems.cfg" \
   || { log "ERROR: ES armsx2 emulator entry missing"; exit 1; }
 grep -q 'name="armsx2-stock"' "$V/etc/emulationstation/es_systems.cfg" \
   || { log "ERROR: ES armsx2-stock emulator entry missing"; exit 1; }
-grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth' "$V/opt/armsx2/PCSX2.ini" \
+grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/+LeftTrigger' "$V/opt/armsx2/PCSX2.ini" \
   || { log "ERROR: ARMSX2 pause-menu hotkey not patched"; exit 1; }
 test -x "$V/opt/pcsx2/bin/pcsx2-sdl" || { log "ERROR: PCSX2 SA binary missing in image"; exit 1; }
 test -s "$V/opt/pcsx2/share/PCSX2/resources/fonts/NotoSansCJK-Regular.ttc" \
@@ -457,7 +461,7 @@ test -s "$V/opt/pcsx2/share/PCSX2/resources/fonts/NotoSansCJK-Regular.ttc" \
 test -s "$V/opt/pcsx2/share/PCSX2/resources/translations/zh-CN.tsv" \
   || { log "ERROR: PCSX2 SA zh-CN translation missing in image"; exit 1; }
 if [ -f "$V/opt/pcsx2/templates/PCSX2.ini" ]; then
-  grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth' "$V/opt/pcsx2/templates/PCSX2.ini" \
+  grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/+LeftTrigger' "$V/opt/pcsx2/templates/PCSX2.ini" \
     || { log "ERROR: PCSX2 SA pause-menu hotkey not patched"; exit 1; }
 fi
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }

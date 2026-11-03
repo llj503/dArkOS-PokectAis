@@ -198,14 +198,15 @@ ES 的 PS2 系统保留 `standalone-pcsx2sa`，并新增两个可选模拟器：
 只在该次启动设置 `VK_ICD_FILENAMES`，不覆盖系统 `rk_vk.json`。
 
 `/usr/local/bin/ps2-launcher` 按 `%EMULATOR%` 分派；ARMSX2 的配置、存档和记忆卡
-放在 `/roms/ps2/armsx2`。热键：**Select+Y 暂停菜单、Select+X 全屏、Select+A 截图**
-（PCSX2 SA 模板和 ARMSX2 模板一致）。
+放在 `/roms/ps2/armsx2`。热键：**Select+L2 暂停菜单、Select+A 截图、Select+L3 全屏**
+（PCSX2 SA 模板和 ARMSX2 模板一致）。暂停菜单里的“关闭游戏”只提示 `Select+Start`，
+不会直接关机。面键不再绑全屏，避免误触退出；键盘绑定在这份 SDL 前端不可用。
 
 PCSX2 SA 的 SDL/ImGui 前端原本没有翻译层、字体也只有 Roboto；镜像内置在本机
 增量重编的中文版（`/opt/pcsx2/bin/pcsx2-sdl`，`zh-CN.tsv` + Noto Sans CJK SC）。
-暂停菜单强制 Resume 焦点并加了 0.25s 输入防抖，避免 Select+Y 命中关闭项直接退出。
-重编补丁见 `image_build/patch_pcsx2sa_zh.py`，发布资产为
-`pcsx2sa-zh-20261103`。
+暂停菜单强制 Resume 焦点、等组合键松开后才接受输入，Close Game 只提示
+`Select+Start` 不再关机；全屏热键已解绑，避免面键误触直接退出。重编补丁见
+`image_build/patch_pcsx2sa_zh.py`，发布资产为 `pcsx2sa-zh-20261103`。
 
 构建：`.github/workflows/build-armsx2.yml` 在 `ubuntu-22.04-arm` 上编译 SDL 前端，
 发布 `armsx2-armv8a-<版本>` release 资产；镜像构建脚本下载它与

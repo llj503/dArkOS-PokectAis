@@ -28,6 +28,8 @@ case "$EMU" in
     if [ "$EMU" != "armsx2-stock" ]; then
       export VK_ICD_FILENAMES=/opt/malisx2/malisx2.json
     fi
+    echo "VAR=armsx2-sdl" > /home/ark/.config/KILLIT
+    sudo systemctl restart killer_daemon.service >/dev/null 2>&1 || true
     exec /opt/armsx2/armsx2-sdl --fullscreen-mode 1024x768 "$ROM"
     ;;
 esac

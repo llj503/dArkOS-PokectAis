@@ -87,6 +87,30 @@ replace_once(main, old_trans, new_trans)
 # demand from the replacement font; no glyph-range API is needed (and it is
 # compiled out by IMGUI_DISABLE_OBSOLETE_FUNCTIONS).
 
+# ---- pause menu vs frontend main loop ----
+# A CLI-booted game runs with start_in_fsui=false. Opening the pause menu sets
+# the VM to Paused, and the old main loop treated Paused as "game over, no FSUI
+# to return to" and exited the whole app. Keep running while a FSUI window
+# (the pause menu) is active.
+replace_once(
+    main,
+    '#include "ImGui/ImGuiManager.h"\n',
+    '#include "ImGui/ImGuiManager.h"\n#include "ImGui/FullscreenUI.h"\n',
+)
+replace_once(
+    main,
+    "\t\t\t\tif (!start_in_fsui)\n"
+    "\t\t\t\t{\n"
+    "\t\t\t\t\ts_shutdown_requested.store(true, std::memory_order_release);\n"
+    "\t\t\t\t\tbreak;\n"
+    "\t\t\t\t}\n",
+    "\t\t\t\tif (!start_in_fsui && !FullscreenUI::HasActiveWindow())\n"
+    "\t\t\t\t{\n"
+    "\t\t\t\t\ts_shutdown_requested.store(true, std::memory_order_release);\n"
+    "\t\t\t\t\tbreak;\n"
+    "\t\t\t\t}\n",
+)
+
 # ---- pause menu: force Resume focus and debounce close/exit ----
 ui = "pcsx2/ImGui/FullscreenUI.cpp"
 text = (root / ui).read_text(encoding="utf-8")
@@ -148,6 +172,20 @@ replace_once(
     ui,
     "\t\t\t\tif (ActiveButton(FSUI_ICONSTR(ICON_FA_POWER_OFF, \"Close Game\"), false))",
     "\t\t\t\tif (pause_input_ready && ActiveButton(FSUI_ICONSTR(ICON_FA_POWER_OFF, \"Close Game\"), false))",
+)
+replace_once(
+    ui,
+    "\t\t\t\t{\n"
+    "\t\t\t\t\t// skip submenu when we can't save anyway\n"
+    "\t\t\t\t\tif (!can_save_state)\n"
+    "\t\t\t\t\t\tRequestShutdown(false);\n"
+    "\t\t\t\t\telse\n"
+    "\t\t\t\t\t\tOpenPauseSubMenu(PauseSubMenu::Exit);\n"
+    "\t\t\t\t}\n",
+    "\t\t\t\t{\n"
+    "\t\t\t\t\t// The handheld exits with Select+Start; never let a menu button terminate the VM.\n"
+    "\t\t\t\t\tHost::AddIconOSDMessage(\"pause_menu_exit\", ICON_FA_POWER_OFF, \"请按 Select+Start 退出游戏\", 5.0f);\n"
+    "\t\t\t\t}\n",
 )
 
 print(f"patched {root}")
