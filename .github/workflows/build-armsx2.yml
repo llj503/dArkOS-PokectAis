@@ -96,10 +96,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         working-directory: armsx2
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" --clobber
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
               --title "ARMSX2 ARMv8.0 ${VERSION} (Pocket AIS)" \
               --prerelease \
               --notes "ARMv8.0-build of ARMSX2 $(git rev-parse --short HEAD), -march=armv8-a -moutline-atomics for Cortex-A53/RK3562. SDL/kmsdrm frontend."
