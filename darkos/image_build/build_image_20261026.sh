@@ -14,10 +14,11 @@
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-IMG=/roms/pocketAis-dArkOS-20261026-autoexpand-sanitized.img
-LOG=/roms/pocketais-image-build-20261026.log
-STATUS=/roms/pocketais-image-build-20261026.status
-SRC=/dev/mmcblk1
+VERSION=${VERSION:-20261026}
+IMG=/roms/pocketAis-dArkOS-${VERSION}-autoexpand-sanitized.img
+LOG=/roms/pocketais-image-build-${VERSION}.log
+STATUS=/roms/pocketais-image-build-${VERSION}.status
+SRC=${SRC:-/dev/mmcblk1}
 
 # fix_gpt_20261020.py: prefer the copy next to this script, else /roms.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,7 +55,7 @@ finish(){ rc=$?; trap - EXIT
   log "exit rc=$rc"; exit "$rc"; }
 trap finish EXIT
 
-log "=== Pocket AIS image build 20261026 ==="
+log "=== Pocket AIS image build ${VERSION} ==="
 log "img_bytes=$IMG_BYTES copy_sectors=$COPY_SECTORS p4_off=$P4_OFF p4_len=$P4_LEN"
 
 [ $((COUNT * 8192)) -eq "$COPY_SECTORS" ] || { log "ERROR: p5 start not 4M aligned"; exit 1; }
@@ -83,6 +84,10 @@ if [ "$RESUME_MODE" -eq 0 ]; then
   rm -f "$IMG"
   dd if="$SRC" of="$IMG" bs=4M count="$COUNT" conv=fsync status=progress
   [ "$(stat -c %s "$IMG")" -eq $((COPY_SECTORS * 512)) ] || { log "ERROR: short copy"; exit 1; }
+  if [ -f "$SRC" ]; then
+    log "removing base image file $SRC after copy"
+    rm -f "$SRC"
+  fi
 
   log "=== [2/8] append 256M p5 placeholder + truncate to $IMG_BYTES ==="
   dd if=/dev/zero of="$IMG" bs=4M count=64 seek="$COUNT" conv=fsync status=none
@@ -123,6 +128,34 @@ fi
 mkdir -p /mnt/imgp4
 mount -o rw,compress=no "$LOOP4" /mnt/imgp4
 M=/mnt/imgp4
+
+# /roms is card-specific: never bake the build card's UUID into the image.
+# The exFAT label is stable across reformats and card swaps.
+if grep -qE '^[^#]*[[:space:]]/roms[[:space:]]' "$M/etc/fstab"; then
+    sed -i -E 's#^[^#]*[[:space:]]/roms[[:space:]].*#LABEL=ROMS /roms exfat defaults,noatime,uid=1000,gid=1000,umask=000,nofail 0 0#' "$M/etc/fstab"
+else
+    printf 'LABEL=ROMS /roms exfat defaults,noatime,uid=1000,gid=1000,umask=000,nofail 0 0\n' >> "$M/etc/fstab"
+fi
+log "fstab /roms -> LABEL=ROMS"
+
+# Ship the label-based first-boot autoexpand even if the live rootfs has an
+# older UUID-based copy.
+if [ -f "$SCRIPT_DIR/pocketais-autoexpand.sh" ]; then
+    install -m 0755 "$SCRIPT_DIR/pocketais-autoexpand.sh" "$M/usr/local/sbin/pocketais-autoexpand"
+    log "installed pocketais-autoexpand.sh (LABEL=ROMS)"
+else
+    log "WARN: pocketais-autoexpand.sh not found next to the build script"
+fi
+
+# The Plymouth text theme is the boot-screen system version. It used to keep
+# the ArkOS base date (06232026); follow the image version instead.
+PLY="$M/usr/share/plymouth/themes/text.plymouth"
+if [ -f "$PLY" ]; then
+    sed -i -E "s/^title=.*/title=dArkOS (${VERSION})/" "$PLY"
+    log "Plymouth title -> dArkOS (${VERSION})"
+else
+    log "WARN: $PLY not found"
+fi
 
 # Pocket AIS speaker route fix. The saved ALSA state can restore Headphone
 # Switch off / HP gain 0 at boot, which mutes the RK817 HP output (the speaker
@@ -305,7 +338,10 @@ for kt in ed25519 ecdsa rsa; do
   test -s "$V/etc/ssh/ssh_host_${kt}_key" || { log "ERROR: missing ssh host key $kt in final p4"; exit 1; }
 done
 [ -s "$V/etc/machine-id" ] && { log "ERROR: machine-id non-empty in final p4"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK"
+grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
+grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
+grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
+log "ES size=$ES_SIZE; p4 verify OK (fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="
@@ -339,5 +375,5 @@ log "=== final GPT verify ==="
 for n in 1 2 3 4 5; do echo "-- part $n --"; /usr/sbin/sgdisk -i $n "$IMG" | grep -iE 'GUID code|unique GUID|Attribute|name'; done
 log "=== ls image ==="; ls -l "$IMG"
 log "=== sha256 (may take a few minutes) ==="
-sha256sum "$IMG" | tee /roms/pocketAis-dArkOS-20261026-autoexpand-sanitized.img.sha256
+sha256sum "$IMG" | tee "${IMG}.sha256"
 log "=== image build complete ==="

@@ -32,6 +32,14 @@ umount "$NEW" 2>/dev/null || true
 mkdir -p "$MNT" "$NEW"
 mount -t btrfs -o loop,rw "$SRC" "$MNT"
 
+# /roms must mount by the exFAT label; the UUID is card-specific.
+if grep -qE '^[^#]*[[:space:]]/roms[[:space:]]' "$MNT/etc/fstab"; then
+    sed -i -E 's#^[^#]*[[:space:]]/roms[[:space:]].*#LABEL=ROMS /roms exfat defaults,noatime,uid=1000,gid=1000,umask=000,nofail 0 0#' "$MNT/etc/fstab"
+else
+    printf 'LABEL=ROMS /roms exfat defaults,noatime,uid=1000,gid=1000,umask=000,nofail 0 0\n' >> "$MNT/etc/fstab"
+fi
+echo "fstab /roms set to LABEL=ROMS"
+
 # Capture the WiFi profile secret for verification, without printing it.
 NM_FILE=$(find "$MNT/etc/NetworkManager/system-connections" -maxdepth 1 -type f -name '*.nmconnection' 2>/dev/null | head -1 || true)
 PSK_VALUE=""

@@ -16,7 +16,8 @@
 - 电池图标裁剪修复；RK817“永远 Charging”假状态用 shim 修正。
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
 - RK817 扬声器：开机恢复 ALSA 状态后重新置位 HP 路由（Headphone on、HP gain 3）。
-- 首次启动自动扩展 `/roms` 分区（exFAT）。
+- 首次启动自动扩展 `/roms` 分区（exFAT）；fstab 用 `LABEL=ROMS` 挂载，换卡或重新格式化后不会因 UUID 变化挂不上。
+- 构建镜像时用 `VERSION`（默认 `20261026`）命名镜像并更新 Plymouth 启动画面版本（`dArkOS (YYYYMMDD)`）；p3 的 `pocketais-autoexpand.done` 在构建时清除。
 
 仍待处理/已知限制：
 
@@ -38,7 +39,7 @@
 | `pocketAis-dArkOS-20261026-autoexpand-sanitized.img.xz` | 3,555,008,556 B | `48b7eae785968ebf328c54ffa0f16ead5583ac47312ea7366cb936c20e4378d3` |
 
 分卷为 `.img.xz.part-00/01` + `SHA256SUMS.txt`；重组命令见顶层 README。镜像不纳入 Git。
-刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`。
+刷写前先解压 xz，使用 Rufus **DD** 模式或 `dd`；刷写后首次启动会扩展 `/roms`（exFAT），并按 `LABEL=ROMS` 挂载。
 这版主要修声音（开机恢复 ALSA 状态后重新置位 HP 路由），PortMaster 更新并改了 GUI 的
 A/B。上一版的 p3 FAT dirty 位修复还在。20261025 的 Release 已删除。
 
@@ -92,6 +93,8 @@ rootfs/
 kernel_config.txt                 # AisOS 内核配置（参考）
 *.sha256                          # 镜像校验
 ```
+
+- GitHub Actions：仓库根目录 `.github/workflows/build.yml`，手动 Run workflow 输入 `VERSION`；以上一版 release 为 base，自动构建、分卷、校验并发布。
 
 ## DTB 与启动
 

@@ -1,0 +1,106 @@
+name: dArkOS Pocket AIS image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image version (YYYYMMDD)
+        required: true
+        default: "20261026"
+      base_tag:
+        description: Base release tag (empty = latest release)
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: darkos-pocketais-image
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/share/swift /usr/local/.ghcup || true
+          df -h /
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils gdisk btrfs-progs python3 openssh-client util-linux
+          df -h /
+
+      - name: Download base image from previous release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BASE_TAG="${{ inputs.base_tag }}"
+          if [ -z "$BASE_TAG" ]; then
+            BASE_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+          fi
+          echo "base release: $BASE_TAG"
+          mkdir -p base
+          gh release download "$BASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*part-*' --pattern 'SHA256SUMS*' --dir base
+          ls -lh base
+          cat base/*.part-* > base.img.xz
+          if ls base/*SHA256SUMS* >/dev/null 2>&1; then
+            (cd base && sha256sum -c *SHA256SUMS* || true)
+          fi
+          xz -d base.img.xz
+          ls -lh base.img
+          df -h /
+
+      - name: Build system image
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /roms
+          sudo env VERSION="${{ inputs.version }}" SRC="$GITHUB_WORKSPACE/base.img" \
+            bash darkos/image_build/build_image_20261026.sh
+          cat "/roms/pocketais-image-build-${{ inputs.version }}.status"
+          ls -lh "/roms/pocketAis-dArkOS-${{ inputs.version }}-autoexpand-sanitized.img"
+
+      - name: Compress, split, checksum and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          IMG="/roms/pocketAis-dArkOS-${VERSION}-autoexpand-sanitized.img"
+          TAG="dArkOS-${VERSION}"
+          NAME="pocketAis-dArkOS-${VERSION}-autoexpand-sanitized.img"
+          sudo chown -R "$(id -u):$(id -g)" /roms
+          xz -T0 -6 -c "$IMG" > "${NAME}.xz"
+          rm -f "$IMG"
+          split -b 1900M -d -a 2 "${NAME}.xz" "${NAME}.xz.part-"
+          sha256sum "${NAME}.xz" > "SHA256SUMS-${VERSION}.txt"
+          sha256sum "${NAME}.xz".part-* >> "SHA256SUMS-${VERSION}.txt"
+          rm -f "${NAME}.xz"
+          ls -lh
+          cat "SHA256SUMS-${VERSION}.txt"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            cat > release-notes.md <<EOF
+          Pocket AIS 的 dArkOS ${VERSION} 卡刷镜像。
+
+          1. 基于上一版卡刷镜像重建；/roms 用 LABEL=ROMS 挂载，换卡或重新格式化后不会因 UUID 变化挂不上。
+          2. Plymouth 启动画面版本为 dArkOS (${VERSION})；p3 的 autoexpand marker 已清理，首次启动会扩展 /roms。
+          3. xz 分卷按顺序 cat 后解压；校验见 SHA256SUMS-${VERSION}.txt。
+          4. 镜像不含用户 ROM/密钥；eMMC AisOS 不修改。
+          EOF
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "dArkOS ${VERSION} (Pocket AIS)" \
+              --notes-file release-notes.md --draft
+          fi
+          gh release upload "$TAG" "${NAME}.xz".part-* "SHA256SUMS-${VERSION}.txt" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

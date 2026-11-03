@@ -23,6 +23,8 @@ P4_SIZE_MIB=12044
 RAW_SIZE=13019137024
 MNT=/mnt/pocketais-p4-final
 
+VERSION=${VERSION:-20261026}
+
 [ "$(id -u)" -eq 0 ] || { echo "run as root" >&2; exit 1; }
 [ -f "$RAW_SRC" ] || { echo "missing raw source: $RAW_SRC" >&2; exit 1; }
 [ -f "$P3_IMG" ] || { echo "missing p3 image: $P3_IMG" >&2; exit 1; }
@@ -37,11 +39,25 @@ if mdir -i "$P3_IMG" ::/authorized_keys >/dev/null 2>&1; then
     exit 1
 fi
 
+# The first-boot autoexpand must not be skipped on a freshly flashed card.
+if mdir -i "$P3_IMG" ::/pocketais-autoexpand.done >/dev/null 2>&1; then
+    mdel -i "$P3_IMG" ::/pocketais-autoexpand.done
+fi
+if mdir -i "$P3_IMG" ::/pocketais-autoexpand.done >/dev/null 2>&1; then
+    echo "ERROR: p3 still contains pocketais-autoexpand.done" >&2
+    exit 1
+fi
+
 # Lock the local user and root passwords in the clean p4 image.
 umount "$MNT" 2>/dev/null || true
 mkdir -p "$MNT"
 mount -t btrfs -o loop,rw "$P4_IMG" "$MNT"
 trap 'umount "$MNT" 2>/dev/null || true' EXIT
+
+# /roms must mount by the exFAT label; the boot splash carries the version.
+grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$MNT/etc/fstab" || { echo "ERROR: /roms is not LABEL=ROMS" >&2; exit 1; }
+PLY="$MNT/usr/share/plymouth/themes/text.plymouth"
+[ -f "$PLY" ] && sed -i -E "s/^title=.*/title=dArkOS (${VERSION})/" "$PLY"
 
 for u in ark root; do
     if awk -F: -v u="$u" '$1==u{found=1} END{exit found?0:1}' "$MNT/etc/shadow"; then

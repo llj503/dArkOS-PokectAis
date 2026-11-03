@@ -36,7 +36,8 @@ dArkOS 已验证：
 - 关机充电/USB host 角色切换；睡眠/背光恢复修复。
 - RK817 扬声器：开机恢复 ALSA 状态后重新置位 HP 路由（Headphone on、HP gain 3），
   ES/RetroArch/Ports 都有声。
-- 首次启动自动扩展 `/roms` 分区（exFAT）。
+- 首次启动自动扩展 `/roms` 分区（exFAT）；fstab 用 `LABEL=ROMS` 挂载，换卡或重新格式化后不会因 UUID 变化挂不上。
+- 构建镜像时用 `VERSION`（默认 `20261026`）命名镜像并更新 Plymouth 启动画面版本（`dArkOS (YYYYMMDD)`）；p3 的 `pocketais-autoexpand.done` 在构建时清除。
 - 镜像 p3(FAT) 出厂即干净：清除 dirty 位、主/备份引导扇区一致，Windows 烧录后**不再弹
   “修复/扫描 dArkOS_Fat”**（20261025 修复了 20261020 版的这个问题）。
 
@@ -95,7 +96,7 @@ Windows 用 `copy /b part-00+part-01 image.xz`，再用 7-Zip 解压。
 1. 按上面的步骤重组 xz，核对 SHA 后刷写到 TF 卡：
    - Windows：使用 **Rufus**，选择 raw 镜像后务必选 **DD 模式**，目标设备选 TF 卡。
    - Linux：`sudo dd if=<image> of=/dev/sdX bs=4M conv=fsync status=progress`
-2. 插入掌机，从 TF 卡启动。首次启动会自动扩展 `/roms` 分区（exFAT）。
+2. 插入掌机，从 TF 卡启动。首次启动会自动扩展 `/roms` 分区（exFAT），并按 `LABEL=ROMS` 挂载。
 3. 若镜像被重新打包后只启动内置系统，检查并修复 p3 的 GPT 可启动标志和分区类型 GUID。
 4. WiFi 在 EmulationStation 网络设置中重新配置；SSH 可把公钥放到 FAT 启动分区
    （p3）根目录的 `authorized_keys`，首次启动脚本会安装给 `ark` 用户。
@@ -112,6 +113,7 @@ Windows 用 `copy /b part-00+part-01 image.xz`，再用 7-Zip 解压。
 │   ├── rootfs/                   # 电池状态/USB 角色 shim 与 systemd 单元
 │   ├── kernel_config.txt         # AisOS 内核配置（参考）
 │   └── *.sha256                  # 发布镜像校验
+├── .github/workflows/build.yml   # GitHub Actions：手动构建镜像
 ├── docs/images/                  # README 截图
 ├── 010-wifi-diag                 # dArkOS WiFi/SSH 诊断脚本
 └── 020-wifi-connman              # dArkOS WiFi 修复脚本
