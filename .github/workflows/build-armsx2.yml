@@ -31,11 +31,30 @@ jobs:
           path: armsx2
           fetch-depth: 1
 
-      - name: Apply pause-menu main-loop fix
+      - name: Checkout dArkOS patch scripts
+        uses: actions/checkout@v4
+        with:
+          path: darkos-ci
+
+      - name: Apply Chinese UI and pause-menu fixes
         run: |
-          sed -i 's/if (!start_in_fsui)$/if (!start_in_fsui \&\& !FullscreenUI::HasActiveWindow())/' \
-            armsx2/pcsx2-sdl/Main.cpp
+          python3 darkos-ci/darkos/image_build/patch_pcsx2sa_zh.py "$PWD/armsx2"
           grep -n "HasActiveWindow" armsx2/pcsx2-sdl/Main.cpp
+          grep -n "pause_input_ready" armsx2/pcsx2/ImGui/FullscreenUI.cpp
+
+      - name: Fetch Chinese font and translation table
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/pcsx2zh
+          gh release download pcsx2sa-zh-20261103 --repo "$GITHUB_REPOSITORY" \
+            --pattern 'pocketAis-PCSX2SA-zh-20261103.tar.zst' --dir /tmp/pcsx2zh
+          tar --zstd -xf /tmp/pcsx2zh/pocketAis-PCSX2SA-zh-20261103.tar.zst \
+            -C /tmp/pcsx2zh --strip-components=1
+          install -d armsx2/bin/resources/fonts armsx2/bin/resources/translations
+          install -m 0644 /tmp/pcsx2zh/NotoSansCJK-Regular.ttc armsx2/bin/resources/fonts/
+          install -m 0644 /tmp/pcsx2zh/zh-CN.tsv armsx2/bin/resources/translations/
+          ls -lh armsx2/bin/resources/fonts/NotoSansCJK-Regular.ttc armsx2/bin/resources/translations/zh-CN.tsv
 
       - name: Install build packages
         run: |

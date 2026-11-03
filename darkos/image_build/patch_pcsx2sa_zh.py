@@ -4,6 +4,7 @@
 Usage: patch_pcsx2sa_zh.py <source-root>
 """
 import pathlib
+import re
 import sys
 
 root = pathlib.Path(sys.argv[1])
@@ -92,11 +93,19 @@ replace_once(main, old_trans, new_trans)
 # the VM to Paused, and the old main loop treated Paused as "game over, no FSUI
 # to return to" and exited the whole app. Keep running while a FSUI window
 # (the pause menu) is active.
-replace_once(
-    main,
-    '#include "ImGui/ImGuiManager.h"\n',
-    '#include "ImGui/ImGuiManager.h"\n#include "ImGui/FullscreenUI.h"\n',
-)
+main_path = root / main
+main_text = main_path.read_text(encoding="utf-8")
+if ('#include "ImGui/FullscreenUI.h"' not in main_text and
+        '#include "pcsx2/ImGui/FullscreenUI.h"' not in main_text):
+    for inc, full in (
+        ('#include "ImGui/ImGuiManager.h"\n', '#include "ImGui/FullscreenUI.h"\n'),
+        ('#include "pcsx2/ImGui/ImGuiManager.h"\n', '#include "pcsx2/ImGui/FullscreenUI.h"\n'),
+    ):
+        if inc in main_text:
+            main_path.write_text(main_text.replace(inc, inc + full, 1), encoding="utf-8")
+            break
+    else:
+        sys.exit("ImGuiManager include not found for FullscreenUI include")
 replace_once(
     main,
     "\t\t\t\tif (!start_in_fsui)\n"
@@ -139,22 +148,27 @@ replace_once(
     "\t\tif (just_focused || force_resume_focus)\n"
     "\t\t\ts_pause_menu_open_time = ImGui::GetTime();\n",
 )
-replace_once(
-    ui,
-    "\t\tBeginMenuButtons(submenu_item_count[static_cast<u32>(s_current_pause_submenu)], 1.0f, ImGuiFullscreen::LAYOUT_MENU_BUTTON_X_PADDING,\n"
-    "\t\t\tImGuiFullscreen::LAYOUT_MENU_BUTTON_Y_PADDING, ImGuiFullscreen::LAYOUT_MENU_BUTTON_HEIGHT_NO_SUMMARY);\n",
-    "\t\tBeginMenuButtons(submenu_item_count[static_cast<u32>(s_current_pause_submenu)], 1.0f, ImGuiFullscreen::LAYOUT_MENU_BUTTON_X_PADDING,\n"
-    "\t\t\tImGuiFullscreen::LAYOUT_MENU_BUTTON_Y_PADDING, ImGuiFullscreen::LAYOUT_MENU_BUTTON_HEIGHT_NO_SUMMARY);\n"
-    "\n"
-    "\t\t// Ignore the opening combo (and any other held button) until the pad is neutral.\n"
-    "\t\tconst bool pause_gamepad_neutral =\n"
-    "\t\t\t!ImGui::IsKeyDown(ImGuiKey_GamepadBack) && !ImGui::IsKeyDown(ImGuiKey_GamepadStart) &&\n"
-    "\t\t\t!ImGui::IsKeyDown(ImGuiKey_GamepadFaceUp) && !ImGui::IsKeyDown(ImGuiKey_GamepadFaceDown) &&\n"
-    "\t\t\t!ImGui::IsKeyDown(ImGuiKey_GamepadFaceLeft) && !ImGui::IsKeyDown(ImGuiKey_GamepadFaceRight) &&\n"
-    "\t\t\t!ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp) && !ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown) &&\n"
-    "\t\t\t!ImGui::IsKeyDown(ImGuiKey_GamepadDpadLeft) && !ImGui::IsKeyDown(ImGuiKey_GamepadDpadRight);\n"
-    "\t\tconst bool pause_input_ready = pause_gamepad_neutral && (ImGui::GetTime() - s_pause_menu_open_time) > 0.35;\n",
-)
+# ARMSX2 adds "+ GetArcadePauseMenuItemCount(...)" to the item count, so match
+# the call generically instead of by exact text.
+pause_ui_path = root / ui
+pause_ui = pause_ui_path.read_text(encoding="utf-8")
+if "const bool pause_input_ready" not in pause_ui:
+    btn_match = re.search(
+        r"\t\tBeginMenuButtons\(submenu_item_count\[static_cast<u32>\(s_current_pause_submenu\)\][^\n]*\n"
+        r"\t\t\tImGuiFullscreen::LAYOUT_MENU_BUTTON[^\n]*\n",
+        pause_ui,
+    )
+    if not btn_match:
+        sys.exit("pause menu BeginMenuButtons block not found")
+    pause_ui = (
+        pause_ui[:btn_match.end()]
+        + "\n"
+        + "\t\t// Debounce the opening combo only; navigation must stay live.\n"
+        + "\t\tconst bool pause_input_ready = (ImGui::GetTime() - s_pause_menu_open_time) > 0.35;\n"
+        + pause_ui[btn_match.end():]
+    )
+    pause_ui_path.write_text(pause_ui, encoding="utf-8")
+
 replace_once(
     ui,
     "\t\t\t\tif (just_focused)\n"
@@ -162,7 +176,7 @@ replace_once(
     "\n"
     "\t\t\t\tif (ActiveButton(FSUI_ICONSTR(ICON_FA_PLAY, \"Resume Game\"), false) || WantsToCloseMenu())\n"
     "\t\t\t\t\tClosePauseMenu();\n",
-    "\t\t\t\tif (just_focused || force_resume_focus || !pause_input_ready)\n"
+    "\t\t\t\tif (just_focused || force_resume_focus)\n"
     "\t\t\t\t\tImGui::SetFocusID(ImGui::GetID(FSUI_ICONSTR(ICON_FA_PLAY, \"Resume Game\")), ImGui::GetCurrentWindow());\n"
     "\n"
     "\t\t\t\tif (pause_input_ready && (ActiveButton(FSUI_ICONSTR(ICON_FA_PLAY, \"Resume Game\"), false) || WantsToCloseMenu()))\n"
