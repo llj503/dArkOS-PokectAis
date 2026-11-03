@@ -65,8 +65,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo mkdir -p /roms
-          sudo env VERSION="${{ inputs.version }}" SRC="$GITHUB_WORKSPACE/base.img" \
-            bash darkos/image_build/build_image_20261026.sh
+          if ! sudo env VERSION="${{ inputs.version }}" SRC="$GITHUB_WORKSPACE/base.img" \
+            bash darkos/image_build/build_image_20261026.sh; then
+            echo "=== build log ==="
+            sudo cat "/roms/pocketais-image-build-${{ inputs.version }}.log" || true
+            exit 1
+          fi
           cat "/roms/pocketais-image-build-${{ inputs.version }}.status"
           ls -lh "/roms/pocketAis-dArkOS-${{ inputs.version }}-autoexpand-sanitized.img"
 

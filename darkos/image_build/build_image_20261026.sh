@@ -116,7 +116,7 @@ log "p4 loop=$LOOP4"
 # by PATH/LABEL, never by UUID (fstab + extlinux use /dev/mmcblk1p4), and the
 # 20261020 sanitize rebuilt p4 with mkfs.btrfs (a brand-new FSID) and still
 # boots -- so changing the FSID is boot-safe.
-LIVE_FSID=$(btrfs inspect-internal dump-super /dev/mmcblk1p4 2>/dev/null | awk '/^fsid/{print $2; exit}')
+LIVE_FSID=$(btrfs inspect-internal dump-super /dev/mmcblk1p4 2>/dev/null | awk '/^fsid/{print $2; exit}' || true)
 IMG_FSID=$(btrfs inspect-internal dump-super "$LOOP4" 2>/dev/null | awk '/^fsid/{print $2; exit}')
 log "live_fsid=$LIVE_FSID img_fsid=$IMG_FSID"
 if [ -z "$IMG_FSID" ] || [ "$LIVE_FSID" = "$IMG_FSID" ]; then
