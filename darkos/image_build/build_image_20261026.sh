@@ -302,6 +302,33 @@ PY
 else
   log "WARN: PortMaster pylibs.zip not found; A/B not patched"
 fi
+# ES runs as ark (uid 1000). A root-owned PortMaster tree cannot install
+# runtimes, write configs, or self-update; hand it to ark and keep it writable.
+PM_DIR="$M/opt/system/Tools/PortMaster"
+if [ -d "$PM_DIR" ]; then
+  chown -R 1000:1000 "$PM_DIR"
+  chmod -R u+rwX "$PM_DIR"
+  chmod 755 "$PM_DIR/PortMaster.sh"
+  [ "$(stat -c %u "$PM_DIR")" -eq 1000 ] || { log "ERROR: PortMaster owner is not ark"; exit 1; }
+  log "PortMaster ownership -> ark (1000:1000)"
+fi
+# ark keeps full root via passwordless sudo; root itself stays locked. This is
+# what the ES helpers and PortMaster expect, and it survives base-image changes.
+mkdir -p "$M/etc/sudoers.d"
+cat > "$M/etc/sudoers.d/ark-no-sudo-password" <<'SUDOEOF'
+ark ALL=(ALL) NOPASSWD: ALL
+SUDOEOF
+chmod 440 "$M/etc/sudoers.d/ark-no-sudo-password"
+chown 0:0 "$M/etc/sudoers.d/ark-no-sudo-password"
+grep -q '^sudo:' "$M/etc/group" || echo 'sudo:x:27:' >> "$M/etc/group"
+awk -F: -v u=ark 'BEGIN{OFS=":"} $1=="sudo"{n=split($4,a,","); f=0; for(i=1;i<=n;i++) if(a[i]==u) f=1; if(!f) $4=($4?$4",":"")u} {print}' \
+  "$M/etc/group" > "$M/etc/group.tmp"
+chmod 644 "$M/etc/group.tmp"; chown 0:0 "$M/etc/group.tmp"; mv "$M/etc/group.tmp" "$M/etc/group"
+if command -v visudo >/dev/null; then
+  visudo -cf "$M/etc/sudoers.d/ark-no-sudo-password" >/dev/null \
+    || { log "ERROR: ark sudoers syntax check failed"; exit 1; }
+fi
+log "ark granted passwordless sudo (root remains locked)"
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
 cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
@@ -338,10 +365,17 @@ for kt in ed25519 ecdsa rsa; do
   test -s "$V/etc/ssh/ssh_host_${kt}_key" || { log "ERROR: missing ssh host key $kt in final p4"; exit 1; }
 done
 [ -s "$V/etc/machine-id" ] && { log "ERROR: machine-id non-empty in final p4"; exit 1; }
+PMV="$V/opt/system/Tools/PortMaster"
+[ "$(stat -c %u "$PMV" 2>/dev/null)" = "1000" ] || { log "ERROR: PortMaster owner in image is not 1000"; exit 1; }
+test -x "$PMV/PortMaster.sh" || { log "ERROR: PortMaster.sh not executable in image"; exit 1; }
+grep -qE '^ark[[:space:]]+ALL=.*NOPASSWD:[[:space:]]*ALL' "$V/etc/sudoers.d/ark-no-sudo-password" \
+  || { log "ERROR: ark NOPASSWD sudo missing in image"; exit 1; }
+awk -F: '$1=="sudo"{print $4}' "$V/etc/group" | grep -qE '(^|,)ark(,|$)' \
+  || { log "ERROR: ark is not in the sudo group"; exit 1; }
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
 grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
 grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK (fstab label, autoexpand label, Plymouth ${VERSION})"
+log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="

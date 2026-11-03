@@ -59,7 +59,9 @@ A/B。上一版的 p3 FAT dirty 位修复还在。20261025 的 Release 已删除
 首测时是坏的**（machine-id 被清空后 systemd 会抢先重建它，`ConditionFirstBoot` 不再成立，
 sshd-keygen 被跳过 → sshd 无 host key → `ssh.service` 启动失败并卡住首次启动）。现改为
 **镜像里预置一套全新的 host key**（并加了 drop-in 清掉易失效的 ConditionFirstBoot 兜底）；
-**默认登录 `ark`/`ark`（首次登录后请务必修改）**，`root` 仍锁定。WiFi 需重新配置。
+**默认登录 `ark`/`ark`（首次登录后请务必修改）**，`root` 仍锁定；`ark` 在 `sudo`
+组并有免密 sudo，执行 `sudo -i` 即得到 root shell（PortMaster/ES 的提权也依赖它）。
+WiFi 需重新配置。
 系统已集成 **PortMaster**（`/opt/system/Tools/PortMaster`）：Ports 游戏 SELECT+START 退出、
 音频走 softvol 跟随系统音量；GUI 的 A/B 映射已按本机手柄改为 A=确认；
 `/opt/system/修改密码.sh` 已改为 `sudo chpasswd`（锁定账号也能设密码）。
@@ -166,6 +168,11 @@ p5 占位虽是 Basic Data 类型，但 Windows 不给盘符、不弹窗，无�
 
 PortMaster 在构建时下载最新版，构建脚本会把 `pylibs.zip` 内 `pySDL2gui.py` 的 A/B
 映射交换为 **A=确认、B=返回**（本机手柄的物理 A 对应 SDL 的 B）。
+
+PortMaster 目录（`/opt/system/Tools/PortMaster`）在镜像里归属 `ark`(1000)：ES 以
+`ark` 运行，若保留 root:root 755，GUI 下载/安装 runtimes 会报权限错误；构建末尾的
+p4 校验会检查属主和 `PortMaster.sh` 可执行位。root 账号仍锁定，`ark` 用免密 sudo
+提权（`sudo -i`）。
 
 Ports 音频：普通端口走 `/etc/asound.conf` 的 softvol → dmix；dmix 在 ES 播放启动音时
 偶发 `unable to open slave`。特定端口（如极品飞车 U2）可在启动脚本里用
