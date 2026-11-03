@@ -331,7 +331,7 @@ fi
 log "ark granted passwordless sudo (root remains locked)"
 
 # ---- ARMSX2 (ARMv8.0) + optional malisx2 Vulkan ICD (PS2) ----
-ARMSX2_VER=${ARMSX2_VER:-20261103}
+ARMSX2_VER=${ARMSX2_VER:-20261104}
 MALISX2_TAG=${MALISX2_TAG:-malisx2-a53-0.3.2}
 ARMSX2_NAME="pocketAis-ARMSX2-armv8a-${ARMSX2_VER}"
 MALISX2_NAME="pocketAis-${MALISX2_TAG}"
@@ -445,6 +445,10 @@ grep -qE '^ark[[:space:]]+ALL=.*NOPASSWD:[[:space:]]*ALL' "$V/etc/sudoers.d/ark-
 awk -F: '$1=="sudo"{print $4}' "$V/etc/group" | grep -qE '(^|,)ark(,|$)' \
   || { log "ERROR: ark is not in the sudo group"; exit 1; }
 test -x "$V/opt/armsx2/armsx2-sdl" || { log "ERROR: ARMSX2 binary missing in image"; exit 1; }
+test -s "$V/opt/armsx2/resources/fonts/NotoSansCJK-Regular.ttc" \
+  || { log "ERROR: ARMSX2 CJK font missing in image"; exit 1; }
+test -s "$V/opt/armsx2/resources/translations/zh-CN.tsv" \
+  || { log "ERROR: ARMSX2 zh-CN translation missing in image"; exit 1; }
 test -f "$V/opt/malisx2/malisx2.json" || { log "ERROR: malisx2 ICD missing in image"; exit 1; }
 test -x "$V/usr/local/bin/ps2-launcher" || { log "ERROR: ps2-launcher missing in image"; exit 1; }
 grep -qF 'ps2-launcher %EMULATOR% %ROM%' "$V/etc/emulationstation/es_systems.cfg" \
@@ -467,7 +471,7 @@ fi
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
 grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
 grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, ark sudo, ARMSX2/malisx2, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
+log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, ark sudo, ARMSX2/malisx2 zh, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="
