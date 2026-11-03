@@ -1,0 +1,114 @@
+name: ARMSX2 ARMv8.0 (Pocket AIS)
+
+# Builds the SDL/kmsdrm frontend with -march=armv8-a for Cortex-A53 (RK3562).
+# Upstream defaults to -march=armv8.1-a (LSE), which SIGILLs on the A53.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag suffix"
+        required: true
+        default: "20261103"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: armsx2-armv8a-${{ inputs.version }}
+      NAME: pocketAis-ARMSX2-armv8a-${{ inputs.version }}
+
+    steps:
+      - name: Checkout ARMSX2
+        uses: actions/checkout@v4
+        with:
+          repository: ARMSX2/ARMSX2
+          ref: cb78946d6ed0678b82fa3e0409c10124265ec18d
+          path: armsx2
+          fetch-depth: 1
+
+      - name: Install build packages
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          sudo apt-add-repository -n 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-17 main'
+          sudo apt-get update
+          sudo apt-get -y install \
+            build-essential cmake ninja-build nasm patchelf pkg-config zstd zlib1g-dev \
+            clang-17 lld-17 llvm-17 \
+            libasound2-dev libaio-dev libcurl4-openssl-dev libdbus-1-dev libdrm-dev \
+            libegl-dev libevdev-dev libgbm-dev libgudev-1.0-dev libinput-dev \
+            libopengl-dev libpcap-dev libpipewire-0.3-dev libpulse-dev libssl-dev \
+            libudev-dev libwayland-dev libx11-dev
+
+      - name: Build static dependencies (ARMv8.0)
+        working-directory: armsx2
+        env:
+          ARMSX2_DEPS_STATIC: "1"
+          CFLAGS: "-march=armv8-a -moutline-atomics"
+          CXXFLAGS: "-march=armv8-a -moutline-atomics"
+        run: .github/workflows/scripts/linux/build-dependencies-runner.sh "$HOME/deps"
+
+      - name: Configure ARMv8.0 SDL frontend
+        working-directory: armsx2
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF \
+            -DCMAKE_PREFIX_PATH="$HOME/deps" \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_C_FLAGS="-march=armv8-a -moutline-atomics" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a -moutline-atomics" \
+            -DCMAKE_EXE_LINKER_FLAGS_INIT="-fuse-ld=lld" \
+            -DCMAKE_MODULE_LINKER_FLAGS_INIT="-fuse-ld=lld" \
+            -DENABLE_QT_UI=OFF \
+            -DENABLE_SDL_FRONTEND=ON \
+            -DENABLE_GSRUNNER=OFF \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_RECOMPILER_TEST_HOOKS=OFF \
+            -DENABLE_SETCAP=OFF \
+            -DUSE_BACKTRACE=OFF \
+            -DX11_API=OFF \
+            -DWAYLAND_API=OFF \
+            -DDISABLE_ADVANCE_SIMD=TRUE \
+            -DOVERRIDE_HOST_PAGE_SIZE=4096 \
+            -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON
+
+      - name: Build armsx2-sdl
+        working-directory: armsx2
+        run: ninja -C build pcsx2-sdl
+
+      - name: Verify and package
+        working-directory: armsx2
+        run: |
+          file build/bin/armsx2-sdl
+          echo "LSE instruction count: $(objdump -d build/bin/armsx2-sdl | grep -cE '\b(casal|casl|ldaddal|swpal)\b' || true)"
+          .github/workflows/scripts/linux/package-sdl.sh "$PWD" "$PWD/build" "$HOME/deps" "$NAME"
+          sha256sum "$NAME.tar.zst" > "$NAME.tar.zst.sha256"
+          ls -lh "$NAME.tar.zst"
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: armsx2
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" --clobber
+          else
+            gh release create "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --title "ARMSX2 ARMv8.0 ${VERSION} (Pocket AIS)" \
+              --prerelease \
+              --notes "ARMv8.0-build of ARMSX2 $(git rev-parse --short HEAD), -march=armv8-a -moutline-atomics for Cortex-A53/RK3562. SDL/kmsdrm frontend."
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: armsx2-armv8a-${{ inputs.version }}
+          path: |
+            armsx2/pocketAis-ARMSX2-armv8a-${{ inputs.version }}.tar.zst
+            armsx2/pocketAis-ARMSX2-armv8a-${{ inputs.version }}.tar.zst.sha256
