@@ -329,6 +329,74 @@ if command -v visudo >/dev/null; then
     || { log "ERROR: ark sudoers syntax check failed"; exit 1; }
 fi
 log "ark granted passwordless sudo (root remains locked)"
+
+# ---- ARMSX2 (ARMv8.0) + optional malisx2 Vulkan ICD (PS2) ----
+ARMSX2_VER=${ARMSX2_VER:-20261103}
+MALISX2_TAG=${MALISX2_TAG:-malisx2-a53-0.3.2}
+ARMSX2_NAME="pocketAis-ARMSX2-armv8a-${ARMSX2_VER}"
+MALISX2_NAME="pocketAis-${MALISX2_TAG}"
+PS2_DL=/tmp/pocketais-ps2-dl
+rm -rf "$PS2_DL"; mkdir -p "$PS2_DL"
+log "downloading ARMSX2 ARMv8.0 ${ARMSX2_VER} + malisx2 ${MALISX2_TAG}"
+for f in "${ARMSX2_NAME}.tar.zst" "${ARMSX2_NAME}.tar.zst.sha256" "${MALISX2_NAME}.tar.zst" "${MALISX2_NAME}.tar.zst.sha256"; do
+  case "$f" in
+    *ARMSX2*) tag="armsx2-armv8a-${ARMSX2_VER}" ;;
+    *)        tag="$MALISX2_TAG" ;;
+  esac
+  curl -fsSL --retry 3 -o "$PS2_DL/$f" \
+    "https://github.com/llj503/dArkOS-PokectAis/releases/download/${tag}/${f}" \
+    || { log "ERROR: download failed: $tag/$f"; exit 1; }
+done
+(cd "$PS2_DL" && sha256sum -c "${ARMSX2_NAME}.tar.zst.sha256" "${MALISX2_NAME}.tar.zst.sha256") \
+  || { log "ERROR: PS2 asset checksum failed"; exit 1; }
+mkdir -p "$M/opt/armsx2" "$M/opt/malisx2"
+tar --zstd -xf "$PS2_DL/${ARMSX2_NAME}.tar.zst" -C "$M/opt/armsx2" --strip-components=1
+tar --zstd -xf "$PS2_DL/${MALISX2_NAME}.tar.zst" -C "$M/opt/malisx2" --strip-components=1
+install -m 0755 "$SCRIPT_DIR/ps2-launcher" "$M/usr/local/bin/ps2-launcher"
+install -m 0644 "$SCRIPT_DIR/armsx2-PCSX2.ini" "$M/opt/armsx2/PCSX2.ini"
+chmod 755 "$M/opt/armsx2/armsx2-sdl"
+chmod 644 "$M/opt/malisx2/malisx2.json"
+chown -R 0:0 "$M/opt/armsx2" "$M/opt/malisx2"
+python3 "$SCRIPT_DIR/patch_es_ps2.py" "$M/etc/emulationstation/es_systems.cfg"
+
+# PS2 hotkeys: Select+Y opens the pause menu; Select+X toggles fullscreen.
+PCSX2_TMPL="$M/opt/pcsx2/templates/PCSX2.ini"
+if [ -f "$PCSX2_TMPL" ]; then
+  python3 - "$PCSX2_TMPL" <<'PY'
+import sys
+p = sys.argv[1]
+out = []
+for line in open(p, encoding="utf-8"):
+    if line.startswith("ToggleFullscreen = "):
+        line = "ToggleFullscreen = SDL-0/Back & SDL-0/FaceWest\n"
+    elif line.startswith("OpenPauseMenu = "):
+        line = "OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth\n"
+    out.append(line)
+open(p, "w", encoding="utf-8", newline="").writelines(out)
+PY
+fi
+log "ARMSX2 + malisx2 installed; ES ps2 choices and hotkeys patched"
+
+# ---- PCSX2 SA: Simplified Chinese UI + safe pause-menu focus ----
+PCSX2SA_TAG=${PCSX2SA_TAG:-pcsx2sa-zh-20261103}
+PCSX2SA_NAME="pocketAis-PCSX2SA-zh-20261103"
+curl -fsSL --retry 3 -o "$PS2_DL/${PCSX2SA_NAME}.tar.zst" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/${PCSX2SA_TAG}/${PCSX2SA_NAME}.tar.zst" \
+  || { log "ERROR: PCSX2 SA zh download failed"; exit 1; }
+curl -fsSL --retry 3 -o "$PS2_DL/${PCSX2SA_NAME}.tar.zst.sha256" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/${PCSX2SA_TAG}/${PCSX2SA_NAME}.tar.zst.sha256" \
+  || { log "ERROR: PCSX2 SA zh checksum download failed"; exit 1; }
+(cd "$PS2_DL" && sha256sum -c "${PCSX2SA_NAME}.tar.zst.sha256") \
+  || { log "ERROR: PCSX2 SA zh checksum failed"; exit 1; }
+rm -rf /tmp/pcsx2sa-zh && mkdir -p /tmp/pcsx2sa-zh
+tar --zstd -xf "$PS2_DL/${PCSX2SA_NAME}.tar.zst" -C /tmp/pcsx2sa-zh --strip-components=1
+install -d "$M/opt/pcsx2/bin" "$M/opt/pcsx2/share/PCSX2/resources/fonts" \
+  "$M/opt/pcsx2/share/PCSX2/resources/translations"
+install -m 0755 /tmp/pcsx2sa-zh/pcsx2-sdl "$M/opt/pcsx2/bin/pcsx2-sdl"
+install -m 0644 /tmp/pcsx2sa-zh/NotoSansCJK-Regular.ttc "$M/opt/pcsx2/share/PCSX2/resources/fonts/NotoSansCJK-Regular.ttc"
+install -m 0644 /tmp/pcsx2sa-zh/zh-CN.tsv "$M/opt/pcsx2/share/PCSX2/resources/translations/zh-CN.tsv"
+log "PCSX2 SA Chinese UI installed"
+
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
 cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
@@ -372,10 +440,30 @@ grep -qE '^ark[[:space:]]+ALL=.*NOPASSWD:[[:space:]]*ALL' "$V/etc/sudoers.d/ark-
   || { log "ERROR: ark NOPASSWD sudo missing in image"; exit 1; }
 awk -F: '$1=="sudo"{print $4}' "$V/etc/group" | grep -qE '(^|,)ark(,|$)' \
   || { log "ERROR: ark is not in the sudo group"; exit 1; }
+test -x "$V/opt/armsx2/armsx2-sdl" || { log "ERROR: ARMSX2 binary missing in image"; exit 1; }
+test -f "$V/opt/malisx2/malisx2.json" || { log "ERROR: malisx2 ICD missing in image"; exit 1; }
+test -x "$V/usr/local/bin/ps2-launcher" || { log "ERROR: ps2-launcher missing in image"; exit 1; }
+grep -qF 'ps2-launcher %EMULATOR% %ROM%' "$V/etc/emulationstation/es_systems.cfg" \
+  || { log "ERROR: ES ps2 command is not ps2-launcher"; exit 1; }
+grep -q 'name="armsx2"' "$V/etc/emulationstation/es_systems.cfg" \
+  || { log "ERROR: ES armsx2 emulator entry missing"; exit 1; }
+grep -q 'name="armsx2-stock"' "$V/etc/emulationstation/es_systems.cfg" \
+  || { log "ERROR: ES armsx2-stock emulator entry missing"; exit 1; }
+grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth' "$V/opt/armsx2/PCSX2.ini" \
+  || { log "ERROR: ARMSX2 pause-menu hotkey not patched"; exit 1; }
+test -x "$V/opt/pcsx2/bin/pcsx2-sdl" || { log "ERROR: PCSX2 SA binary missing in image"; exit 1; }
+test -s "$V/opt/pcsx2/share/PCSX2/resources/fonts/NotoSansCJK-Regular.ttc" \
+  || { log "ERROR: PCSX2 SA CJK font missing in image"; exit 1; }
+test -s "$V/opt/pcsx2/share/PCSX2/resources/translations/zh-CN.tsv" \
+  || { log "ERROR: PCSX2 SA zh-CN translation missing in image"; exit 1; }
+if [ -f "$V/opt/pcsx2/templates/PCSX2.ini" ]; then
+  grep -qF 'OpenPauseMenu = SDL-0/Back & SDL-0/FaceNorth' "$V/opt/pcsx2/templates/PCSX2.ini" \
+    || { log "ERROR: PCSX2 SA pause-menu hotkey not patched"; exit 1; }
+fi
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
 grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
 grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, fstab label, autoexpand label, Plymouth ${VERSION})"
+log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, ark sudo, ARMSX2/malisx2, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="

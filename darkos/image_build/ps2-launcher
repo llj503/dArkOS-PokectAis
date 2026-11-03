@@ -1,0 +1,35 @@
+#!/bin/bash
+# PS2 dispatcher for dArkOS ES.
+#   standalone-pcsx2sa : existing PCSX2 SA (stock Mali Vulkan)
+#   armsx2             : ARMSX2 ARMv8.0 (stock Mali Vulkan)
+#   armsx2-malisx2     : ARMSX2 with the malisx2 Vulkan ICD
+set -u
+
+EMU="${1:-standalone-pcsx2sa}"
+ROM="${2:-}"
+
+case "$EMU" in
+  armsx2|armsx2-malisx2|armsx2-stock)
+    DATA=/roms/ps2/armsx2
+    mkdir -p "$DATA"/{inis,memcards,sstates,snaps,cache,textures,cheats,patches,resources,logs,inputprofiles,debuggerlayouts,debuggersettings}
+    export HOME="$DATA"
+    export XDG_CONFIG_HOME="$DATA/.config"
+    export XDG_DATA_HOME="$DATA/.local/share"
+    mkdir -p "$XDG_CONFIG_HOME/PCSX2/inis"
+    if [ ! -f "$XDG_CONFIG_HOME/PCSX2/inis/PCSX2.ini" ] && [ -f /opt/armsx2/PCSX2.ini ]; then
+      cp /opt/armsx2/PCSX2.ini "$XDG_CONFIG_HOME/PCSX2/inis/PCSX2.ini"
+    fi
+    export SDL_GAMECONTROLLERCONFIG="1900a4dd726b333536322d6a6f797300,rk3562-joystick,a:b1,b:b0,x:b2,y:b3,back:b8,start:b9,guide:b10,misc1:b17,leftstick:b11,rightstick:b12,dpup:b13,dpdown:b14,dpleft:b15,dpright:b16,leftshoulder:b4,rightshoulder:b5,lefttrigger:a2,righttrigger:a5,leftx:a0,lefty:a1,rightx:a3,righty:a4,platform:Linux,"
+    export SDL_AUDIODRIVER=alsa
+    export AUDIODEV=default
+    # ARMSX2 on G52 needs malisx2; stock Mali aborts in GS init. Keep the
+    # stock choice only as an explicit experimental entry.
+    unset VK_ICD_FILENAMES
+    if [ "$EMU" != "armsx2-stock" ]; then
+      export VK_ICD_FILENAMES=/opt/malisx2/malisx2.json
+    fi
+    exec /opt/armsx2/armsx2-sdl --fullscreen-mode 1024x768 "$ROM"
+    ;;
+esac
+
+exec /usr/local/bin/standalone-pcsx2sa "$EMU" "$ROM"

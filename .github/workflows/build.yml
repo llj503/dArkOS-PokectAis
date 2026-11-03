@@ -36,7 +36,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y xz-utils gdisk btrfs-progs python3 openssh-client util-linux
+          sudo apt-get install -y xz-utils gdisk btrfs-progs python3 openssh-client util-linux zstd
           df -h /
 
       - name: Download base image from previous release

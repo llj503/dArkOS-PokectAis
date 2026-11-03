@@ -80,6 +80,10 @@ image_build/
   pocketais-autoexpand.sh         # 首次启动扩展 /roms
   spktoggle.sh                    # 开机恢复 HP 路由（Headphone on / HP gain 3）
   pocketais-autoexpand.service
+  ps2-launcher                    # PS2 分派：PCSX2 SA / ARMSX2 / ARMSX2+malisx2
+  armsx2-PCSX2.ini                # ARMSX2 默认配置（BIOS/存档路径、热键）
+  patch_es_ps2.py                 # 给 ES 的 ps2 系统加 ARMSX2 选项
+  patch_pcsx2sa_zh.py             # PCSX2 SA 中文 UI + 暂停菜单焦点补丁
   sanitize_p4.sh                  # 清理 rootfs 并重建干净 BTRFS
   finalize_release.sh             # 锁定账户密码、写入 p3/p4、校验 raw
   raw2png.js                      # 调试用帧缓冲转换
@@ -178,6 +182,34 @@ Ports 音频：普通端口走 `/etc/asound.conf` 的 softvol → dmix；dmix �
 偶发 `unable to open slave`。特定端口（如极品飞车 U2）可在启动脚本里用
 `ALSA_CONFIG_PATH` 指向仅含 `plug → hw:0,0` 的配置，绕开 dmix。
 
+
+## PS2：ARMSX2 + 可选 malisx2
+
+镜像在 `/opt/armsx2` 集成 ARMSX2 SDL/kmsdrm 前端（ARMv8.0 自编，
+`-march=armv8-a -moutline-atomics`）。官方 Linux 包按 ARMv8.1/LSE 编译，在
+RK3562 的 Cortex-A53 上会因 `casl` 触发 SIGILL，不能直接使用。
+
+ES 的 PS2 系统保留 `standalone-pcsx2sa`，并新增两个可选模拟器：
+
+- `armsx2`：ARMSX2 + `/opt/malisx2` 的 malisx2 ICD；G52 上 **必须** 用 malisx2，
+  实测 007.chd 正常启动；
+- `armsx2-stock`：ARMSX2 + 系统 Mali Vulkan（实验；G52 上 GS 初始化会 abort）。
+
+只在该次启动设置 `VK_ICD_FILENAMES`，不覆盖系统 `rk_vk.json`。
+
+`/usr/local/bin/ps2-launcher` 按 `%EMULATOR%` 分派；ARMSX2 的配置、存档和记忆卡
+放在 `/roms/ps2/armsx2`。热键：**Select+Y 暂停菜单、Select+X 全屏、Select+A 截图**
+（PCSX2 SA 模板和 ARMSX2 模板一致）。
+
+PCSX2 SA 的 SDL/ImGui 前端原本没有翻译层、字体也只有 Roboto；镜像内置在本机
+增量重编的中文版（`/opt/pcsx2/bin/pcsx2-sdl`，`zh-CN.tsv` + Noto Sans CJK SC）。
+暂停菜单强制 Resume 焦点并加了 0.25s 输入防抖，避免 Select+Y 命中关闭项直接退出。
+重编补丁见 `image_build/patch_pcsx2sa_zh.py`，发布资产为
+`pcsx2sa-zh-20261103`。
+
+构建：`.github/workflows/build-armsx2.yml` 在 `ubuntu-22.04-arm` 上编译 SDL 前端，
+发布 `armsx2-armv8a-<版本>` release 资产；镜像构建脚本下载它与
+`malisx2-a53-0.3.2`、`pcsx2sa-zh-20261103`，并校验 SHA-256。
 
 ## 电池与 USB
 
