@@ -46,8 +46,10 @@ jobs:
           set -euo pipefail
           BASE_TAG="${{ inputs.base_tag }}"
           if [ -z "$BASE_TAG" ]; then
-            BASE_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName')
+            BASE_TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 50 --json tagName \
+              --jq '[.[] | select(.tagName | startswith("dArkOS-"))][0].tagName')
           fi
+          [ -n "$BASE_TAG" ] || { echo "no dArkOS-* base release found" >&2; exit 1; }
           echo "base release: $BASE_TAG"
           mkdir -p base
           gh release download "$BASE_TAG" --repo "$GITHUB_REPOSITORY" \
