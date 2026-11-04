@@ -402,8 +402,8 @@ install -m 0644 /tmp/pcsx2sa-zh/zh-CN.tsv "$M/opt/pcsx2/share/PCSX2/resources/tr
 log "PCSX2 SA Chinese UI installed"
 
 # ---- EmulationStation: OPTIONS > Tools (PortMaster + theme downloader) ----
-ES_TAG=${ES_TAG:-es-tools-20261104}
-ES_NAME=pocketAis-ES-tools-20261104
+ES_TAG=${ES_TAG:-es-tools-20261105}
+ES_NAME=pocketAis-ES-tools-20261105
 curl -fsSL --retry 3 -o "$PS2_DL/${ES_NAME}.tar.zst" \
   "https://github.com/llj503/dArkOS-PokectAis/releases/download/${ES_TAG}/${ES_NAME}.tar.zst" \
   || { log "ERROR: ES tools download failed"; exit 1; }
