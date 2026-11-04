@@ -422,8 +422,8 @@ install -m 0644 /tmp/pcsx2sa-zh/zh-CN.tsv "$M/opt/pcsx2/share/PCSX2/resources/tr
 log "PCSX2 SA Chinese UI installed"
 
 # ---- EmulationStation: OPTIONS > Tools (PortMaster + theme downloader) ----
-ES_TAG=${ES_TAG:-es-tools-20261106}
-ES_NAME=pocketAis-ES-tools-20261106
+ES_TAG=${ES_TAG:-es-tools-20261107}
+ES_NAME=pocketAis-ES-tools-20261107
 curl -fsSL --retry 3 -o "$PS2_DL/${ES_NAME}.tar.zst" \
   "https://github.com/llj503/dArkOS-PokectAis/releases/download/${ES_TAG}/${ES_NAME}.tar.zst" \
   || { log "ERROR: ES tools download failed"; exit 1; }
@@ -438,7 +438,19 @@ test -x /tmp/es-tools/emulationstation || { log "ERROR: ES tools binary missing"
 install -m 0755 /tmp/es-tools/emulationstation "$M/usr/bin/emulationstation/emulationstation"
 install -m 0644 /tmp/es-tools/emulationstation2.po \
   "$M/usr/bin/emulationstation/resources/locale/zh-CN/emulationstation2.po"
-log "EmulationStation Tools menu + SHOW NETWORK ICON zh installed"
+
+# Ship the bundled themes as installed themes for the ark user.
+ES_THEMES="$M/home/ark/.emulationstation/themes"
+if [ -d "$M/tempthemes" ]; then
+  mkdir -p "$ES_THEMES"
+  for t in "$M"/tempthemes/*; do
+    [ -d "$t" ] || continue
+    name=$(basename "$t")
+    [ -d "$ES_THEMES/$name" ] || cp -a "$t" "$ES_THEMES/$name"
+  done
+  chown -R 1000:1000 "$ES_THEMES"
+fi
+log "EmulationStation Tools menu, zh labels, preloaded themes installed"
 
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
@@ -474,6 +486,9 @@ grep -aq "addToolsToMenu" "$V/usr/bin/emulationstation/emulationstation" \
 grep -q 'msgid "SHOW NETWORK ICON"' \
   "$V/usr/bin/emulationstation/resources/locale/zh-CN/emulationstation2.po" \
   || { log "ERROR: SHOW NETWORK ICON zh missing in image"; exit 1; }
+THEME_COUNT=$(find "$V/home/ark/.emulationstation/themes" -maxdepth 2 -name theme.xml 2>/dev/null | wc -l)
+[ "$THEME_COUNT" -ge 5 ] || { log "ERROR: preloaded themes missing ($THEME_COUNT)"; exit 1; }
+log "installed themes: $THEME_COUNT"
 for f in /opt/ngp-panel/ngp-wifi-gui /opt/ngp-panel/ngp-panel-gui "/opt/system/网络设置.sh" /usr/local/sbin/pocketais-usb-role-watch /usr/local/sbin/pocketais-autoexpand; do
   test -e "$V$f" && log "OK  $f" || { log "ERROR: missing $f in image"; exit 1; }
 done
