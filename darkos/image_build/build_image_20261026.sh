@@ -269,8 +269,8 @@ PMEOF
 else
   log "WARN: PortMaster.zip download failed; ports may not launch"
 fi
-# PortMaster's runtime manager crashes when a port's "runtime" attribute is a
-# list (TypeError: unhashable type: 'list'). Handle both string and list.
+# PortMaster fixes: runtime manager crashes when a port's "runtime" attribute
+# is a list; and the pad's labelled A/B are inverted relative to SDL's map.
 PM_PYLIBS="$M/opt/system/Tools/PortMaster/pylibs.zip"
 if [ -f "$PM_PYLIBS" ]; then
   if python3 - "$PM_PYLIBS" <<'PY'
@@ -286,7 +286,8 @@ new = """        for port_name, port_info in self.gui.hm.list_ports(filters=['in
             for runtime in runtimes:
                 if runtime in self.runtimes:
                     self.runtimes[runtime]['ports'].append(port_info['attr']['title'])"""
-patched = False
+patched_runtime = False
+patched_ab = False
 with zipfile.ZipFile(p) as src:
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
         for item in src.infolist():
@@ -295,18 +296,31 @@ with zipfile.ZipFile(p) as src:
                 s = data.decode("utf-8")
                 if old in s:
                     s = s.replace(old, new, 1)
-                    patched = True
+                    patched_runtime = True
+                data = s.encode("utf-8")
+            elif item.filename.endswith("pySDL2gui.py"):
+                s = data.decode("utf-8")
+                if "SDL_CONTROLLER_BUTTON_A: 'A'" in s and "SDL_CONTROLLER_BUTTON_B: 'B'" in s:
+                    s = s.replace("SDL_CONTROLLER_BUTTON_A: 'A'", "SDL_CONTROLLER_BUTTON_A: '__SWAP__'", 1)
+                    s = s.replace("SDL_CONTROLLER_BUTTON_B: 'B'", "SDL_CONTROLLER_BUTTON_B: 'A'", 1)
+                    s = s.replace("SDL_CONTROLLER_BUTTON_A: '__SWAP__'", "SDL_CONTROLLER_BUTTON_A: 'B'", 1)
+                    patched_ab = True
                 data = s.encode("utf-8")
             dst.writestr(item, data)
 os.replace(tmp, p)
-print("PM runtime manager patched:", patched)
-sys.exit(0 if patched else 1)
+with zipfile.ZipFile(p) as z:
+    n = next((n for n in z.namelist() if n.endswith("pySDL2gui.py")), None)
+    t = z.read(n).decode("utf-8") if n else ""
+ab_ok = ("BUTTON_MAP = {\n        sdl2.SDL_CONTROLLER_BUTTON_A: 'B',\n"
+         "        sdl2.SDL_CONTROLLER_BUTTON_B: 'A',") in t
+print("PM runtime:", patched_runtime, "A/B:", patched_ab, ab_ok)
+sys.exit(0 if (patched_runtime and ab_ok) else 1)
 PY
-  then log "PortMaster runtime manager patched (list runtime)"
-  else log "WARN: PortMaster runtime patch failed; runtime manager may crash"
+  then log "PortMaster runtime + A/B patched (pylibs.zip)"
+  else log "WARN: PortMaster runtime/A/B patch failed"
   fi
 else
-  log "WARN: PortMaster pylibs.zip not found; runtime manager not patched"
+  log "WARN: PortMaster pylibs.zip not found; runtime/A/B not patched"
 fi
 # ES runs as ark (uid 1000). A root-owned PortMaster tree cannot install
 # runtimes, write configs, or self-update; hand it to ark and keep it writable.
