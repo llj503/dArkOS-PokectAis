@@ -401,6 +401,25 @@ install -m 0644 /tmp/pcsx2sa-zh/NotoSansCJK-Regular.ttc "$M/opt/pcsx2/share/PCSX
 install -m 0644 /tmp/pcsx2sa-zh/zh-CN.tsv "$M/opt/pcsx2/share/PCSX2/resources/translations/zh-CN.tsv"
 log "PCSX2 SA Chinese UI installed"
 
+# ---- EmulationStation: OPTIONS > Tools (PortMaster + theme downloader) ----
+ES_TAG=${ES_TAG:-es-tools-20261104}
+ES_NAME=pocketAis-ES-tools-20261104
+curl -fsSL --retry 3 -o "$PS2_DL/${ES_NAME}.tar.zst" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/${ES_TAG}/${ES_NAME}.tar.zst" \
+  || { log "ERROR: ES tools download failed"; exit 1; }
+curl -fsSL --retry 3 -o "$PS2_DL/${ES_NAME}.tar.zst.sha256" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/${ES_TAG}/${ES_NAME}.tar.zst.sha256" \
+  || { log "ERROR: ES tools checksum download failed"; exit 1; }
+(cd "$PS2_DL" && sha256sum -c "${ES_NAME}.tar.zst.sha256") \
+  || { log "ERROR: ES tools checksum failed"; exit 1; }
+rm -rf /tmp/es-tools && mkdir -p /tmp/es-tools
+tar --zstd -xf "$PS2_DL/${ES_NAME}.tar.zst" -C /tmp/es-tools
+test -x /tmp/es-tools/emulationstation || { log "ERROR: ES tools binary missing"; exit 1; }
+install -m 0755 /tmp/es-tools/emulationstation "$M/usr/bin/emulationstation/emulationstation"
+install -m 0644 /tmp/es-tools/emulationstation2.po \
+  "$M/usr/bin/emulationstation/resources/locale/zh-CN/emulationstation2.po"
+log "EmulationStation Tools menu + SHOW NETWORK ICON zh installed"
+
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
 cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
@@ -430,6 +449,11 @@ V=/mnt/imgroot
 test -x "$V/usr/bin/emulationstation/emulationstation" || { log "ERROR: ES binary missing"; exit 1; }
 ES_SIZE=$(stat -c %s "$V/usr/bin/emulationstation/emulationstation")
 [ "$ES_SIZE" -gt 5000000 ] || { log "ERROR: ES binary too small ($ES_SIZE)"; exit 1; }
+grep -aq "addToolsToMenu" "$V/usr/bin/emulationstation/emulationstation" \
+  || { log "ERROR: ES Tools menu patch missing in image"; exit 1; }
+grep -q 'msgid "SHOW NETWORK ICON"' \
+  "$V/usr/bin/emulationstation/resources/locale/zh-CN/emulationstation2.po" \
+  || { log "ERROR: SHOW NETWORK ICON zh missing in image"; exit 1; }
 for f in /opt/ngp-panel/ngp-wifi-gui /opt/ngp-panel/ngp-panel-gui "/opt/system/网络设置.sh" /usr/local/sbin/pocketais-usb-role-watch /usr/local/sbin/pocketais-autoexpand; do
   test -e "$V$f" && log "OK  $f" || { log "ERROR: missing $f in image"; exit 1; }
 done
@@ -471,7 +495,7 @@ fi
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
 grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
 grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK (PortMaster owner, ark sudo, ARMSX2/malisx2 zh, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
+log "ES size=$ES_SIZE; p4 verify OK (ES tools, PortMaster owner, ark sudo, ARMSX2/malisx2 zh, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="
