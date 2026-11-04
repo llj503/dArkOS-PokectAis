@@ -269,38 +269,44 @@ PMEOF
 else
   log "WARN: PortMaster.zip download failed; ports may not launch"
 fi
-# Pocket AIS: the pad reports its labelled A as SDL controller button B and vice
-# versa, so PortMaster's GUI (pySDL2gui) would show confirm/back swapped. Swap the
-# two entries inside pylibs.zip; idempotent if upstream ever ships them swapped.
+# PortMaster's runtime manager crashes when a port's "runtime" attribute is a
+# list (TypeError: unhashable type: 'list'). Handle both string and list.
 PM_PYLIBS="$M/opt/system/Tools/PortMaster/pylibs.zip"
 if [ -f "$PM_PYLIBS" ]; then
   if python3 - "$PM_PYLIBS" <<'PY'
 import sys, zipfile, os
 p = sys.argv[1]; tmp = p + ".tmp"
+old = """        for port_name, port_info in self.gui.hm.list_ports(filters=['installed']).items():
+            if port_info['attr']['runtime'] in self.runtimes:
+                self.runtimes[port_info['attr']['runtime']]['ports'].append(port_info['attr']['title'])"""
+new = """        for port_name, port_info in self.gui.hm.list_ports(filters=['installed']).items():
+            runtimes = port_info['attr']['runtime']
+            if not isinstance(runtimes, list):
+                runtimes = [runtimes]
+            for runtime in runtimes:
+                if runtime in self.runtimes:
+                    self.runtimes[runtime]['ports'].append(port_info['attr']['title'])"""
+patched = False
 with zipfile.ZipFile(p) as src:
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as dst:
         for item in src.infolist():
             data = src.read(item.filename)
-            if item.filename.endswith("pySDL2gui.py"):
+            if item.filename.endswith("pugscene.py"):
                 s = data.decode("utf-8")
-                s = s.replace("SDL_CONTROLLER_BUTTON_A: 'A'", "SDL_CONTROLLER_BUTTON_A: '__SWAP__'")
-                s = s.replace("SDL_CONTROLLER_BUTTON_B: 'B'", "SDL_CONTROLLER_BUTTON_B: 'A'")
-                s = s.replace("SDL_CONTROLLER_BUTTON_A: '__SWAP__'", "SDL_CONTROLLER_BUTTON_A: 'B'")
+                if old in s:
+                    s = s.replace(old, new, 1)
+                    patched = True
                 data = s.encode("utf-8")
             dst.writestr(item, data)
 os.replace(tmp, p)
-with zipfile.ZipFile(p) as z:
-    name = next((n for n in z.namelist() if n.endswith("pySDL2gui.py")), None)
-    t = z.read(name).decode("utf-8") if name else ""
-ok = "SDL_CONTROLLER_BUTTON_A: 'B'" in t and "SDL_CONTROLLER_BUTTON_B: 'A'" in t
-print("PM A/B swapped:", ok)
-sys.exit(0 if ok else 1)
+print("PM runtime manager patched:", patched)
+sys.exit(0 if patched else 1)
 PY
-  then log "PortMaster A/B mapped for Pocket AIS (pylibs.zip patched)"
-  else log "WARN: PortMaster A/B patch failed; GUI confirm/back may be swapped"
+  then log "PortMaster runtime manager patched (list runtime)"
+  else log "WARN: PortMaster runtime patch failed; runtime manager may crash"
   fi
 else
-  log "WARN: PortMaster pylibs.zip not found; A/B not patched"
+  log "WARN: PortMaster pylibs.zip not found; runtime manager not patched"
 fi
 # ES runs as ark (uid 1000). A root-owned PortMaster tree cannot install
 # runtimes, write configs, or self-update; hand it to ark and keep it writable.
