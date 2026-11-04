@@ -102,6 +102,7 @@ jobs:
           2. Plymouth 启动画面版本为 dArkOS (${VERSION})；p3 的 autoexpand marker 已清理，首次启动会扩展 /roms。
           3. xz 分卷按顺序 cat 后解压；校验见 SHA256SUMS-${VERSION}.txt。
           4. 镜像不含用户 ROM/密钥；eMMC AisOS 不修改。
+          5. PS2 默认 ARMSX2 + malisx2（简体中文菜单，A 确认/B 返回）；PCSX2 SA 目前载入游戏数据会崩溃，暂不建议使用。
           EOF
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --title "dArkOS ${VERSION} (Pocket AIS)" \

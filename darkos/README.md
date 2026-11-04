@@ -197,16 +197,18 @@ abort）；`standalone-pcsx2sa` 仍保留为可选。只在该次启动设置
 
 `/usr/local/bin/ps2-launcher` 按 `%EMULATOR%` 分派；ARMSX2 的配置、存档和记忆卡
 放在 `/roms/ps2/armsx2`。ARMSX2 的 `[Pad1]` 用 SDL3 位置名
-（FaceSouth/East/West/North），启动时接 killer_daemon，`Select+Start` 可退出。
-热键（PCSX2 SA 和 ARMSX2 模板一致）：**Select+L2 暂停菜单、Select+A 截图、
-Select+L3 全屏**；暂停菜单里的“关闭游戏”只提示 `Select+Start`。
+（FaceSouth/East/West/North），SDL 映射按印刷键位（A=确认、B=返回），启动时接
+killer_daemon，`Select+Start` 可退出。热键（PCSX2 SA 和 ARMSX2 模板一致）：
+**Select+L2 暂停菜单、Select+A 截图、Select+L3 全屏**；暂停菜单里的“关闭游戏”
+只提示 `Select+Start`。注意开菜单用的是 Select，之后按 Start 前要先松开 Select，
+否则会触发 `Select+Start` 退出。
 
 PCSX2 SA 的 SDL/ImGui 前端原本没有翻译层、字体也只有 Roboto；镜像内置在本机
 增量重编的中文版（`/opt/pcsx2/bin/pcsx2-sdl`，`zh-CN.tsv` + Noto Sans CJK SC），
 并修了 SDL 主循环把 `Paused` 当游戏结束退出的 bug 和暂停菜单焦点/导航。PCSX2 SA
-目前在 007 这类游戏的 stock/Mali GS 载入会 abort，可在 PCSX2 菜单里
-“切换到软件渲染器”绕过（速度会慢）。重编补丁见
-`image_build/patch_pcsx2sa_zh.py`，发布资产为 `pcsx2sa-zh-20261103`。
+目前在载入游戏数据时会 SIGSEGV（Vulkan 和软件渲染器都复现），暂不建议使用；
+PS2 请用 ARMSX2。重编补丁见 `image_build/patch_pcsx2sa_zh.py`，发布资产为
+`pcsx2sa-zh-20261103`。
 
 构建：`.github/workflows/build-armsx2.yml` 在 `ubuntu-22.04-arm` 上编译 SDL 前端
 （构建时应用 `patch_pcsx2sa_zh.py`：中文 UI、暂停菜单焦点/防误退，并给
