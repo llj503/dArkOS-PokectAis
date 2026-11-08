@@ -1,0 +1,107 @@
+name: malisx2 ARMv8.0 (Pocket AIS)
+
+# Builds the malisx2 Vulkan ICD (Linux/kbase) for Cortex-A53 (RK3562).
+# Upstream ships an Android HAL zip only; ROCKNIX's cross file targets
+# cortex-a55, so this native arm64 build passes -mcpu=cortex-a53 instead.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "malisx2 version"
+        required: true
+        default: "0.4.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    env:
+      VERSION: ${{ inputs.version }}
+      MALISX2_COMMIT: 63e307e63aa6798137f8c660e965403973159296
+      MESA_COMMIT: f59c211100b174191d9df540451e94b2d5cb2b26
+      NAME: pocketAis-malisx2-a53-${{ inputs.version }}
+
+    steps:
+      - name: Checkout malisx2 ${{ inputs.version }}
+        uses: actions/checkout@v4
+        with:
+          repository: bmdhacks/malisx2
+          ref: ${{ inputs.version }}
+          path: malisx2
+          fetch-depth: 1
+
+      - name: Install build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git ninja-build pkg-config \
+            python3 python3-venv libdrm-dev libudev-dev \
+            libclang-dev clang lld zstd
+          python3 -m venv "$HOME/venv"
+          "$HOME/venv/bin/pip" install --upgrade pip
+          "$HOME/venv/bin/pip" install 'meson>=1.7' mako pyyaml
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+            | sh -s -- -y --profile minimal
+          source "$HOME/.cargo/env"
+          cargo install bindgen-cli --version 0.72.1 --locked
+          rustc --version
+          bindgen --version
+          "$HOME/venv/bin/meson" --version
+
+      - name: Fetch pinned Mesa sources
+        run: |
+          cd malisx2
+          git init mesa
+          git -C mesa fetch --depth 1 \
+            https://github.com/bmdhacks/armsx2-turnip.git "$MESA_COMMIT"
+          git -C mesa checkout FETCH_HEAD
+          test -d mesa/src/panfrost
+
+      - name: Configure
+        run: |
+          export PATH="$HOME/venv/bin:$HOME/.cargo/bin:$PATH"
+          cd malisx2
+          meson setup build --buildtype=release -Db_ndebug=true \
+            -Dc_args=-mcpu=cortex-a53 -Dcpp_args=-mcpu=cortex-a53
+          meson configure build | grep -E "c_args|cpp_args|buildtype"
+
+      - name: Build
+        run: |
+          export PATH="$HOME/venv/bin:$HOME/.cargo/bin:$PATH"
+          ninja -C malisx2/build
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p pkg/malisx2
+          strip --strip-unneeded malisx2/build/src/libvulkan_malisx2.so
+          cp malisx2/build/src/libvulkan_malisx2.so pkg/malisx2/
+          cat > pkg/malisx2/malisx2.json <<'EOF'
+          {
+              "file_format_version": "1.0.1",
+              "ICD": {
+                  "library_path": "/opt/malisx2/libvulkan_malisx2.so",
+                  "api_version": "1.3.0"
+              }
+          }
+          EOF
+          tar --zstd -cf "${NAME}.tar.zst" -C pkg malisx2
+          sha256sum "${NAME}.tar.zst" > "${NAME}.tar.zst.sha256"
+          cat "${NAME}.tar.zst.sha256"
+          file pkg/malisx2/libvulkan_malisx2.so
+          readelf -h pkg/malisx2/libvulkan_malisx2.so | grep -E "Class|Machine"
+          strings -a pkg/malisx2/libvulkan_malisx2.so \
+            | grep -m2 "malisx2.${VERSION}"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.tar.zst
+            ${{ env.NAME }}.tar.zst.sha256
+          if-no-files-found: error
+          retention-days: 14
