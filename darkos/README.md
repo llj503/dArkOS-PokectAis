@@ -190,7 +190,7 @@ Ports 音频：普通端口走 `/etc/asound.conf` 的 softvol → dmix；dmix �
 RK3562 的 Cortex-A53 上会因 `casl` 触发 SIGILL，不能直接使用。ARMSX2 的 SDL
 主循环已修掉“Paused 当游戏结束退出”的 bug，暂停菜单热键不再闪退。
 
-ES 的 PS2 系统默认 `armsx2`（ARMSX2 + `/opt/malisx2` 的 malisx2 ICD）；G52 上
+ES 的 PS2 系统默认 `armsx2`（ARMSX2 + `/opt/malisx2` 的 malisx2 0.4.0 ICD）；G52 上
 **必须** 用 malisx2。`armsx2-stock` 是实验项（系统 Mali Vulkan，GS 初始化会
 abort）；`standalone-pcsx2sa` 仍保留为可选。只在该次启动设置
 `VK_ICD_FILENAMES`，不覆盖系统 `rk_vk.json`。
@@ -213,8 +213,10 @@ PS2 请用 ARMSX2。重编补丁见 `image_build/patch_pcsx2sa_zh.py`，发布�
 构建：`.github/workflows/build-armsx2.yml` 在 `ubuntu-22.04-arm` 上编译 SDL 前端
 （构建时应用 `patch_pcsx2sa_zh.py`：中文 UI、暂停菜单焦点/防误退，并给
 `Main.cpp` 打 `HasActiveWindow` 主循环补丁），发布 `armsx2-armv8a-<版本>`
-release 资产；镜像构建脚本下载它与 `malisx2-a53-0.3.2`、`pcsx2sa-zh-20261103`，
-并校验 SHA-256。
+release 资产；`.github/workflows/build-malisx2.yml` 在 `ubuntu-24.04-arm` 上按
+`-mcpu=cortex-a53` 编译 malisx2 0.4.0 的 Linux/kbase ICD（上游只发 Android HAL，
+ROCKNIX 的 cross 文件是 cortex-a55），发布 `malisx2-a53-<版本>` release 资产。
+镜像构建脚本下载它们与 `pcsx2sa-zh-20261103`，并校验 SHA-256。
 
 ## 电池与 USB
 

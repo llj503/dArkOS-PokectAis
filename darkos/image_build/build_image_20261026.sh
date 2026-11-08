@@ -352,7 +352,7 @@ log "ark granted passwordless sudo (root remains locked)"
 
 # ---- ARMSX2 (ARMv8.0) + optional malisx2 Vulkan ICD (PS2) ----
 ARMSX2_VER=${ARMSX2_VER:-20261104}
-MALISX2_TAG=${MALISX2_TAG:-malisx2-a53-0.3.2}
+MALISX2_TAG=${MALISX2_TAG:-malisx2-a53-0.4.0}
 ARMSX2_NAME="pocketAis-ARMSX2-armv8a-${ARMSX2_VER}"
 MALISX2_NAME="pocketAis-${MALISX2_TAG}"
 PS2_DL=/tmp/pocketais-ps2-dl
