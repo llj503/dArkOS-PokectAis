@@ -25,13 +25,16 @@ jobs:
       NAME: pocketAis-malisx2-a53-${{ inputs.version }}
 
     steps:
-      - name: Checkout malisx2 ${{ inputs.version }}
+      - name: Checkout malisx2 v${{ inputs.version }}
         uses: actions/checkout@v4
         with:
           repository: bmdhacks/malisx2
-          ref: ${{ inputs.version }}
+          ref: v${{ inputs.version }}
           path: malisx2
           fetch-depth: 1
+
+      - name: Verify source commit
+        run: test "$(git -C malisx2 rev-parse HEAD)" = "$MALISX2_COMMIT"
 
       - name: Install build packages
         run: |
