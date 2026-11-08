@@ -41,7 +41,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential git ninja-build pkg-config \
-            python3 python3-venv libdrm-dev libudev-dev \
+            python3 python3-venv libdrm-dev libudev-dev libgbm-dev \
             libclang-dev clang lld zstd
           python3 -m venv "$HOME/venv"
           "$HOME/venv/bin/pip" install --upgrade pip
