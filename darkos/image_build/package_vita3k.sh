@@ -128,22 +128,55 @@ fi
     echo "::error::libQt6WaylandClient.so.6 was not bundled" >&2; exit 1; }
 
 # --- RPATHs ------------------------------------------------------------------
-patchelf --set-rpath '$ORIGIN/lib' "$PKG/$EXE"
+# patchelf 0.18 segfaults on some of the Qt FFmpeg stub libraries. The launcher
+# puts lib/ on LD_LIBRARY_PATH, which is searched before DT_RUNPATH, so a file
+# whose RPATH could not be rewritten still resolves correctly through it. Warn
+# and carry on instead of losing the whole build, then verify the closure below.
+RPATH_FAILED=$TMP/rpath-failed
+: > "$RPATH_FAILED"
+set_rpath() {
+    local want=$1 f=$2
+    if ! patchelf --set-rpath "$want" "$f" 2>/dev/null; then
+        echo "  WARNING: patchelf failed on $(basename "$f"), relying on LD_LIBRARY_PATH"
+        printf '%s\n' "$(basename "$f")" >> "$RPATH_FAILED"
+    fi
+}
+
+set_rpath '$ORIGIN/lib' "$PKG/$EXE"
 for f in "$PKG"/lib/*.so*; do
     [ -f "$f" ] || continue
-    patchelf --set-rpath '$ORIGIN' "$f"
+    set_rpath '$ORIGIN' "$f"
 done
 for f in "$PKG"/*.so*; do
     [ -f "$f" ] || continue
-    patchelf --set-rpath '$ORIGIN/lib' "$f"
+    set_rpath '$ORIGIN/lib' "$f"
 done
 while read -r f; do
     rel=$(realpath --relative-to="$(dirname "$f")" "$PKG/lib")
-    patchelf --set-rpath "\$ORIGIN/$rel" "$f"
+    set_rpath "\$ORIGIN/$rel" "$f"
 done < <(find "$PKG/qtplugins" -type f -name '*.so')
 
 strip --strip-unneeded "$PKG/$EXE" 2>/dev/null || true
 find "$PKG/lib" "$PKG/qtplugins" -type f -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
+
+# --- final dependency check --------------------------------------------------
+# Same environment the launcher sets up. Anything unresolved here would make
+# the platform plugin fall back to the device's own Qt, so refuse to ship it.
+echo "== final ldd check (launcher environment) =="
+: > "$TMP/final-missing"
+# Bundle only: with $QTDIR/lib on the path a missing module would silently
+# resolve against the builder's Qt install instead of the shipped one.
+for f in "$PKG/$EXE" "$PKG"/lib/*.so* "$PKG"/qtplugins/*/*.so; do
+    [ -f "$f" ] || continue
+    LD_LIBRARY_PATH="$PKG/lib:$PKG" ldd "$f" 2>/dev/null \
+        | grep "not found" | sed "s|^|$(basename "$f"): |" >> "$TMP/final-missing" || true
+done
+if [ -s "$TMP/final-missing" ]; then
+    echo "::error::the bundle does not resolve its own dependencies:"
+    sort -u "$TMP/final-missing"
+    exit 1
+fi
+echo "  all dependencies resolve"
 
 # --- launcher ----------------------------------------------------------------
 cat > "$PKG/vita3k.sh" <<'EOF'
@@ -188,6 +221,10 @@ chmod +x "$PKG/vita3k.sh"
         git -C "$SRC" submodule status --recursive 2>/dev/null | sed 's/^/  /'
     fi
     echo "patches: darkos/image_build/patch_vita3k.py (fork_build.h + Atrac9DecodeBounded shim)"
+    if [ -s "$RPATH_FAILED" ]; then
+        echo "rpath not rewritten (resolved via LD_LIBRARY_PATH):"
+        sed 's/^/  /' "$RPATH_FAILED"
+    fi
     echo "external system libraries:"
     sed 's/^/  /' "$TMP/external.sorted"
 } > "$PKG/BUILD-INFO.txt"
