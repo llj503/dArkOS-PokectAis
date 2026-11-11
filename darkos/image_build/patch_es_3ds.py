@@ -4,7 +4,7 @@ import sys
 
 p = sys.argv[1]
 t = open(p, encoding="utf-8").read()
-if 'name="3ds"' in t:
+if '<name>3ds</name>' in t:
     print("3ds system already present")
     sys.exit(0)
 

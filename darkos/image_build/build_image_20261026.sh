@@ -513,7 +513,7 @@ THEME_COUNT=$(find "$V/home/ark/.emulationstation/themes" -maxdepth 2 -name them
 log "installed themes: $THEME_COUNT"
 test -s "$V/home/ark/.config/retroarch/cores/azahar_libretro.so" \
   || { log "ERROR: Azahar core missing in image"; exit 1; }
-grep -q 'name="3ds"' "$V/etc/emulationstation/es_systems.cfg" \
+grep -q '<name>3ds</name>' "$V/etc/emulationstation/es_systems.cfg" \
   || { log "ERROR: ES 3ds system missing"; exit 1; }
 grep -q 'azahar_libretro.so' "$V/etc/emulationstation/es_systems.cfg" \
   || { log "ERROR: ES 3ds command missing"; exit 1; }
