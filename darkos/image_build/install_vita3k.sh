@@ -31,6 +31,10 @@ chmod +x "$BUNDLE/vita3k.sh" "$BUNDLE/Vita3K"
 
 echo "== installing launcher =="
 install -m 0755 "$SCRIPTS/psvita-launch.sh" /usr/local/bin/psvita-launch.sh
+# gptokeyb map: Weston ignores gamepads, so the Qt GUI needs uinput keys.
+if [ -r "$SCRIPTS/vita3k.gptk" ]; then
+    install -m 0644 "$SCRIPTS/vita3k.gptk" /usr/local/share/vita3k.gptk
+fi
 mkdir -p /roms/psvita /roms/vita3k /roms/ports
 chown ark:ark /roms/psvita /roms/vita3k /roms/ports
 install -m 0755 -o ark -g ark "$SCRIPTS/vita3k-ports-gui.sh" "/roms/ports/Vita3K.sh"

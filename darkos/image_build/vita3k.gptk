@@ -1,0 +1,29 @@
+# gptokeyb map for the Vita3K-Plus Qt GUI on dArkOS.
+#
+# Weston/libinput ignores gamepads ("device is a joystick or a gamepad,
+# ignoring"), so the Qt frontend never sees the handheld's buttons. gptokeyb
+# turns them into uinput key events, which Weston forwards to Qt as a keyboard.
+#
+# The game window ignores key events (GameWindow::keyPressEvent just calls
+# ignore()), so this does not double up with the emulated Vita pad, which
+# Vita3K reads through SDL directly.
+#
+# Select+Start is gptokeyb's own exit combo and kills Vita3K.
+back = esc
+start = enter
+a = enter
+b = esc
+x = space
+y = backspace
+l1 = pageup
+r1 = pagedown
+l2 = home
+r2 = end
+up = up
+down = down
+left = left
+right = right
+left_analog_up = up
+left_analog_down = down
+left_analog_left = left
+left_analog_right = right

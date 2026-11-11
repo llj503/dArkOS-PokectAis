@@ -48,6 +48,7 @@ chown ark:ark "$DATA" 2>/dev/null || true
 [ -e "$BUNDLE/portable" ] || ln -s "$DATA" "$BUNDLE/portable"
 
 WESTON_PID=
+GPTK_PID=
 GOV_CPU=
 GOV_GPU=
 GOV_DMC=
@@ -81,6 +82,10 @@ restore_governors() {
 }
 
 cleanup() {
+    if [ -n "$GPTK_PID" ]; then
+        kill "$GPTK_PID" 2>/dev/null
+        kill -9 "$GPTK_PID" 2>/dev/null
+    fi
     if [ -n "$WESTON_PID" ]; then
         kill "$WESTON_PID" 2>/dev/null
         for _ in $(seq 1 20); do
@@ -91,6 +96,8 @@ cleanup() {
     fi
     rm -f "$RTDIR/$SOCK" "$RTDIR/$SOCK.lock"
     restore_governors
+    systemctl restart killer_daemon.service >/dev/null 2>&1 || true
+    systemctl restart ogage.service >/dev/null 2>&1 || true
     systemctl start emulationstation
 }
 trap cleanup EXIT
@@ -125,7 +132,29 @@ chmod 0666 "$RTDIR/$SOCK"
 # Select+Start kills the emulator; the EXIT trap then brings ES back.
 # CMake names the executable Vita3K (OUTPUT_NAME), so that is the process name.
 echo "VAR=Vita3K" > /home/ark/.config/KILLIT
-systemctl restart killer_daemon.service >/dev/null 2>&1 || true
+
+# Weston/libinput refuses gamepads, so the Qt GUI would be keyboard-only.
+# gptokeyb (the same tool PortMaster uses) turns the pad into uinput keys.
+# It owns Select+Start while it runs, so killer_daemon stands down.
+GPTOKEYB=/opt/inttools/gptokeyb
+GPTK=/usr/local/share/vita3k.gptk
+GPTK_PID=
+if [ -x "$GPTOKEYB" ] && [ -r "$GPTK" ]; then
+    chmod 666 /dev/uinput 2>/dev/null || true
+    systemctl stop killer_daemon.service >/dev/null 2>&1 || true
+    systemctl stop ogage.service >/dev/null 2>&1 || true
+    SDL_GAMECONTROLLERCONFIG_FILE=/opt/inttools/gamecontrollerdb.txt \
+        "$GPTOKEYB" -1 Vita3K -c "$GPTK" >/dev/null 2>&1 &
+    GPTK_PID=$!
+else
+    systemctl restart killer_daemon.service >/dev/null 2>&1 || true
+fi
+
+# Use the device's own controller mapping so Vita3K's SDL pad and gptokeyb
+# agree on which physical button is A.
+RK_MAP=$(grep -m1 '^1900a4dd726b333536322d6a6f797300,' \
+    /opt/inttools/gamecontrollerdb.txt 2>/dev/null || true)
+[ -n "$RK_MAP" ] && export SDL_GAMECONTROLLERCONFIG="$RK_MAP"
 
 ARGS=(-F)
 if [ -n "$ROM" ]; then
