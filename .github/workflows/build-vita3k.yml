@@ -40,8 +40,10 @@ jobs:
           fetch-depth: 1
 
       # The v1.4-Corrected tag is out of sync with itself: it never committed the
-      # generated util/fork_build.h, and codec/src/atrac9.cpp calls
-      # Atrac9DecodeBounded() which the pinned LibAtrac9 gitlink does not export.
+      # generated util/fork_build.h, codec/src/atrac9.cpp calls Atrac9DecodeBounded()
+      # which the pinned LibAtrac9 gitlink does not export, surface_cache.cpp has
+      # ambiguous braced assignments under C++23, and main.cpp's post-install
+      # auto-boot writes run_app_path to a Config that was already moved away.
       - name: Patch Vita3K source
         run: |
           python3 hostrepo/darkos/image_build/patch_vita3k.py "$GITHUB_WORKSPACE/vita3k"
