@@ -48,7 +48,7 @@ jobs:
       - name: Install Qt 6.11 (official linux_arm64)
         run: |
           python3 -m pip install --user aqtinstall
-          python3 -m aqt install-qt linux_arm64 6.11.0 linux_arm64 \
+          python3 -m aqt install-qt linux_arm64 desktop 6.11.0 gcc_arm64 \
             -m qtsvg qtmultimedia qttools qtimageformats \
             -O "$HOME/Qt"
           QTDIR=$(find "$HOME/Qt/6.11.0" -maxdepth 1 -type d -name 'gcc_arm64' | head -1)
