@@ -25,6 +25,11 @@ jobs:
       NAME: pocketAis-Vita3KPlus-armv8a-${{ inputs.version }}
 
     steps:
+      - name: Checkout dArkOS build scripts
+        uses: actions/checkout@v4
+        with:
+          path: hostrepo
+
       - name: Checkout Vita3K-Plus
         uses: actions/checkout@v4
         with:
@@ -34,14 +39,14 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
-      - name: Provide missing fork_build.h
-        working-directory: vita3k
+      # The v1.4-Corrected tag is out of sync with itself: it never committed the
+      # generated util/fork_build.h, and codec/src/atrac9.cpp calls
+      # Atrac9DecodeBounded() which the pinned LibAtrac9 gitlink does not export.
+      - name: Patch Vita3K source
         run: |
-          cat > vita3k/util/include/util/fork_build.h <<'EOF'
-          #pragma once
-          #define FORK_BUILD_SEQ 1
-          #define FORK_BUILD_CHANGES "v1.4-Corrected"
-          EOF
+          python3 hostrepo/darkos/image_build/patch_vita3k.py "$GITHUB_WORKSPACE/vita3k"
+          git -C vita3k rev-parse HEAD
+          git -C vita3k submodule status external/LibAtrac9
 
       - name: Install build packages
         run: |
@@ -57,6 +62,7 @@ jobs:
       - name: Install Qt 6.11 (official linux_arm64)
         run: |
           python3 -m pip install --user --break-system-packages aqtinstall
+          python3 -m aqt list-qt linux_arm64 desktop --modules 6.11.0 || true
           python3 -m aqt install-qt linux_arm64 desktop 6.11.0 linux_gcc_arm64 \
             -m qtmultimedia qtimageformats \
             -O "$HOME/Qt"
@@ -64,6 +70,14 @@ jobs:
           [ -n "$QTDIR" ] || { echo "Qt 6.11 arm64 install not found"; find "$HOME/Qt" -maxdepth 3 -type d; exit 1; }
           echo "QTDIR=$QTDIR" >> "$GITHUB_ENV"
           test -f "$QTDIR/bin/qmake" || test -f "$QTDIR/bin/qtpaths"
+          # dArkOS has no X server: the Wayland platform plugin is mandatory.
+          if ! ls "$QTDIR"/plugins/platforms/libqwayland-*.so >/dev/null 2>&1; then
+            python3 -m aqt install-qt linux_arm64 desktop 6.11.0 linux_gcc_arm64 \
+              -m qtwayland -O "$HOME/Qt" || true
+          fi
+          ls -l "$QTDIR/plugins/platforms/"
+          ls "$QTDIR"/plugins/platforms/libqwayland-*.so >/dev/null 2>&1 || {
+            echo "::error::Qt 6.11 linux_arm64 has no Wayland platform plugin"; exit 1; }
 
       - name: Configure Vita3K
         working-directory: vita3k
@@ -86,29 +100,8 @@ jobs:
       - name: Package bundle
         working-directory: vita3k
         run: |
-          set -e
-          BIN=$(find build -type f -name vita3k | head -1)
-          [ -n "$BIN" ] || { echo "vita3k binary not found"; exit 1; }
-          BINDIR=$(dirname "$BIN")
-          file "$BIN"
-          rm -rf pkg && mkdir -p pkg/lib pkg/qtplugins
-          cp -a "$BINDIR"/. pkg/
-          cp -a "$QTDIR"/lib/libQt6*.so.6* pkg/lib/ 2>/dev/null || true
-          cp -a "$QTDIR"/plugins/. pkg/qtplugins/
-          patchelf --set-rpath '$ORIGIN/lib' pkg/vita3k
-          cat > pkg/vita3k.sh <<'EOF'
-          #!/bin/sh
-          HERE=$(cd "$(dirname "$0")" && pwd)
-          export QT_QPA_PLATFORM=wayland
-          export QT_PLUGIN_PATH="$HERE/qtplugins"
-          export LD_LIBRARY_PATH="$HERE/lib:$LD_LIBRARY_PATH"
-          exec "$HERE/vita3k" "$@"
-          EOF
-          chmod +x pkg/vita3k.sh
-          tar --zstd -cf "$NAME.tar.zst" -C pkg .
-          sha256sum "$NAME.tar.zst" > "$NAME.tar.zst.sha256"
-          ls -lh "$NAME.tar.zst"
-          cat "$NAME.tar.zst.sha256"
+          bash "$GITHUB_WORKSPACE/hostrepo/darkos/image_build/package_vita3k.sh" \
+            "$GITHUB_WORKSPACE/vita3k/build" "$QTDIR" "$NAME" "$GITHUB_WORKSPACE/vita3k"
 
       - name: Publish release asset
         env:
