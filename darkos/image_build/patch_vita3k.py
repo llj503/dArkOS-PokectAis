@@ -15,6 +15,11 @@ Two defects in the tag (both are "tag is out of sync with what the author built"
    most ``available`` bytes and rejects a frame that claims to consume more than
    the caller said was there.
 
+3. ``vita3k/renderer/src/vulkan/surface_cache.cpp`` assigns a braced-init-list to
+   ``vk::Offset3D`` / ``vk::Extent3D`` members.  With the pinned Vulkan-Headers
+   and C++23 that is ambiguous between ``operator=(VkOffset3D const &)`` and the
+   implicit copy/move assignment, so name the type explicitly.
+
 Usage: patch_vita3k.py <vita3k-source-root>
 Idempotent: safe to run twice.
 """
@@ -102,6 +107,31 @@ def patch_atrac9(root: Path) -> None:
     print(f"patched {p}")
 
 
+def patch_surface_cache(root: Path) -> None:
+    p = root / "vita3k" / "renderer" / "src" / "vulkan" / "surface_cache.cpp"
+    t = p.read_text(encoding="utf-8")
+    pairs = [
+        ("copy.imageOffset = { sync_x0, sync_y0, 0 };",
+         "copy.imageOffset = vk::Offset3D{ sync_x0, sync_y0, 0 };"),
+        ("copy.imageExtent = { sync_w, sync_h, 1 };",
+         "copy.imageExtent = vk::Extent3D{ sync_w, sync_h, 1 };"),
+    ]
+    changed = 0
+    for old, new in pairs:
+        if new in t:
+            continue
+        if old not in t:
+            print(f"WARNING: expected line not found in {p}: {old}")
+            continue
+        t = t.replace(old, new, 1)
+        changed += 1
+    if changed:
+        p.write_text(t, encoding="utf-8")
+        print(f"patched {p} ({changed} assignment(s))")
+    else:
+        print("surface_cache.cpp already patched")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -110,6 +140,7 @@ def main() -> None:
         sys.exit(f"{root} does not look like a Vita3K source tree")
     patch_fork_build_h(root)
     patch_atrac9(root)
+    patch_surface_cache(root)
 
 
 if __name__ == "__main__":
