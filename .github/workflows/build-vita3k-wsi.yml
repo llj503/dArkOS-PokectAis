@@ -1,0 +1,148 @@
+name: Vita3K Wayland WSI layer (Pocket AIS)
+
+# The RK3562 Mali blob (libmali-bifrost-g52-g29p1.so) is the gbm winsys variant:
+# its Vulkan instance extensions are VK_KHR_surface / VK_KHR_display /
+# VK_EXT_headless_surface only. Vita3K's Vulkan renderer needs
+# VK_KHR_wayland_surface to present under Weston, so build ARM's window system
+# integration layer, which supplies it from a dma-buf backed swapchain.
+#
+# The layer's main branch uses VK_KHR_present_id2 / present_wait2 /
+# EXT_present_timing, which Debian trixie's Vulkan headers (1.4.309) do not
+# have yet -- pin Khronos headers instead of relying on the distro package.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "package version"
+        required: true
+        default: "20261111"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ inputs.version }}
+      WSI_COMMIT: 40cfec09d0e2d42c5e1f2642cf4cba11e7008112
+      HEADERS_TAG: v1.4.368
+      NAME: pocketAis-vita3k-wsi-a53-${{ inputs.version }}
+      TAG: vita3k-wsi-a53-${{ inputs.version }}
+      DEST: /opt/vita3k-wsi
+
+    steps:
+      - name: Checkout host repo
+        uses: actions/checkout@v4
+        with:
+          path: hostrepo
+          fetch-depth: 1
+
+      - name: Checkout vulkan-wsi-layer
+        uses: actions/checkout@v4
+        with:
+          repository: ginkage/vulkan-wsi-layer
+          ref: ${{ env.WSI_COMMIT }}
+          path: wsi
+          fetch-depth: 1
+
+      - name: Verify source commit
+        run: test "$(git -C wsi rev-parse HEAD)" = "$WSI_COMMIT"
+
+      - name: Checkout Vulkan headers
+        uses: actions/checkout@v4
+        with:
+          repository: KhronosGroup/Vulkan-Headers
+          ref: ${{ env.HEADERS_TAG }}
+          path: headers
+          fetch-depth: 1
+
+      - name: Install build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git \
+            libwayland-dev wayland-protocols libdrm-dev zstd
+
+      - name: Configure
+        working-directory: wsi
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DVULKAN_CXX_INCLUDE="$GITHUB_WORKSPACE/headers/include" \
+            -DBUILD_WSI_WAYLAND=1 \
+            -DBUILD_WSI_X11=0 \
+            -DBUILD_WSI_HEADLESS=0 \
+            -DBUILD_WSI_DISPLAY=0 \
+            -DSELECT_EXTERNAL_ALLOCATOR=dma_buf_heaps \
+            -DWSIALLOC_MEMORY_HEAP_NAME=system-uncached \
+            -DENABLE_WAYLAND_FIFO_PRESENTATION_THREAD=1 \
+            -DCMAKE_C_FLAGS="-march=armv8-a -moutline-atomics" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a -moutline-atomics" \
+            .
+
+      - name: Build
+        working-directory: wsi
+        run: cmake --build build -j $(nproc)
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p pkg/vita3k-wsi
+          strip --strip-unneeded wsi/build/libVkLayer_window_system_integration.so
+          cp wsi/build/libVkLayer_window_system_integration.so pkg/vita3k-wsi/
+          # The loader resolves library_path relative to the manifest, but an
+          # absolute path keeps working wherever the manifest is copied.
+          python3 - <<'PY'
+          import json, os
+          src = "wsi/build/VkLayer_window_system_integration.json"
+          dst = "pkg/vita3k-wsi/VkLayer_window_system_integration.json"
+          j = json.load(open(src))
+          j["layer"]["library_path"] = os.environ["DEST"] + "/libVkLayer_window_system_integration.so"
+          json.dump(j, open(dst, "w"), indent=3)
+          PY
+          cat > pkg/vita3k-wsi/BUILD-INFO.txt <<EOF
+          source: https://github.com/ginkage/vulkan-wsi-layer
+          commit: ${WSI_COMMIT}
+          vulkan-headers: ${HEADERS_TAG}
+          flags: -march=armv8-a -moutline-atomics
+          wsi: wayland only (x11/headless/display off)
+          allocator: dma_buf_heaps, heap system-uncached
+          install: ${DEST}
+          enable: VK_ADD_IMPLICIT_LAYER_PATH=${DEST}
+          EOF
+          tar --zstd -cf "${NAME}.tar.zst" -C pkg vita3k-wsi
+          sha256sum "${NAME}.tar.zst" > "${NAME}.tar.zst.sha256"
+          cat "${NAME}.tar.zst.sha256"
+          file pkg/vita3k-wsi/libVkLayer_window_system_integration.so
+          readelf -h pkg/vita3k-wsi/libVkLayer_window_system_integration.so | grep -E "Class|Machine"
+          # Cortex-A53 is ARMv8.0: no LSE atomics may appear unguarded.
+          objdump -d pkg/vita3k-wsi/libVkLayer_window_system_integration.so \
+            | grep -cE '\b(casal|casal[bh]?|ldadd|ldadd[lbha]*|swp|swp[lbha]*)\b' \
+            || echo "0 unguarded LSE candidates"
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Vita3K Wayland WSI layer ${VERSION} (Pocket AIS)" \
+              --prerelease \
+              --notes "vulkan-wsi-layer for Cortex-A53/RK3562. Adds VK_KHR_wayland_surface on top of the Rockchip Mali blob, which only exposes VK_KHR_display/headless. Install to /opt/vita3k-wsi and enable with VK_ADD_IMPLICIT_LAYER_PATH."
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.tar.zst
+            ${{ env.NAME }}.tar.zst.sha256
+          if-no-files-found: error
+          retention-days: 14

@@ -177,10 +177,77 @@ else
     echo "psvita: libwayland-client.so.0 not found, Qt may bind to libMali's copy" >&2
 fi
 
+# The blob is the gbm winsys variant: its Vulkan instance extensions are only
+# VK_KHR_surface / VK_KHR_display / VK_EXT_headless_surface, so there is no
+# VK_KHR_wayland_surface and Vita3K's Vulkan renderer cannot create a surface
+# under Weston. vulkan-wsi-layer supplies the missing WSI on top of the blob
+# (dma-buf backed swapchain handed over linux-dmabuf). It is an implicit layer,
+# so VK_ADD_IMPLICIT_LAYER_PATH is the switch -- VK_ADD_LAYER_PATH only covers
+# explicit layers and silently does nothing here. Scoped to this process tree,
+# the rest of the system keeps using the blob directly.
+WSI_DIR=/opt/vita3k-wsi
+if [ -r "$WSI_DIR/VkLayer_window_system_integration.json" ]; then
+    export VK_ADD_IMPLICIT_LAYER_PATH="$WSI_DIR${VK_ADD_IMPLICIT_LAYER_PATH:+:$VK_ADD_IMPLICIT_LAYER_PATH}"
+else
+    echo "psvita: $WSI_DIR missing, Vita3K's Vulkan renderer has no Wayland WSI" >&2
+fi
+
+# The Welcome dialog is modal and runs before app.exec() (main_window.cpp:
+# welcome.exec()), so it blocks the QTimer::singleShot(0) that auto-boots
+# run_app_path -- with the default show-welcome=true a game never starts on its
+# own. Prime the two GUI options a console entry wants; Vita3K keeps every other
+# key at its default, and rewrites the file itself on exit.
+CFG="$DATA/config.yml"
+prime_config() {
+    local key=$1 val=$2
+    if [ ! -f "$CFG" ]; then
+        printf -- '---\n' > "$CFG"
+        chown ark:ark "$CFG" 2>/dev/null || true
+    fi
+    if grep -q "^$key:" "$CFG"; then
+        grep -q "^$key: $val\$" "$CFG" || sed -i "s|^$key:.*|$key: $val|" "$CFG"
+    else
+        sed -i "0,/^---\$/s//---\n$key: $val/" "$CFG"
+    fi
+}
+prime_config show-welcome false
+prime_config boot-apps-full-screen true
+
+# gptokeyb does not EVIOCGRAB the pad, so Vita3K's SDL and the uinput keys both
+# see every button. Make the keyboard bindings agree with vita3k.gptk so the two
+# paths press the same Vita button instead of A meaning Cross *and* Start.
+# Done once: after this the user can remap in Vita3K's own controls dialog.
+if [ ! -e "$DATA/.darkos-controls" ]; then
+    prime_config keyboard-button-cross Enter
+    prime_config keyboard-button-circle Escape
+    prime_config keyboard-button-square Space
+    prime_config keyboard-button-triangle Backspace
+    prime_config keyboard-button-start Insert
+    prime_config keyboard-button-select Delete
+    prime_config keyboard-button-l1 PageUp
+    prime_config keyboard-button-r1 PageDown
+    prime_config keyboard-button-l2 Home
+    prime_config keyboard-button-r2 End
+    touch "$DATA/.darkos-controls"
+    chown ark:ark "$DATA/.darkos-controls" 2>/dev/null || true
+fi
+
 ARGS=(-F)
 if [ -n "$ROM" ]; then
     if [ -e "$ROM" ]; then
-        ARGS+=("$ROM")
+        # An extracted NoNpDrm folder is named after the title. main.cpp only
+        # auto-boots a directory install when install_contents() returns exactly
+        # 1, and an app+patch folder returns 2, so the first launch installs and
+        # then sits in the GUI. Once it is installed, boot it by title instead.
+        TITLE=$(basename "$ROM")
+        if [ -d "$ROM" ] && [ -d "$DATA/fs/ux0/app/$TITLE" ]; then
+            ARGS+=(-r "$TITLE")
+        else
+            # The "--" is required: Vita3K's CLI11 treats a leading "/" as a
+            # Windows-style option, so a bare /roms/... path is swallowed and
+            # content-path stays empty (no install, no auto-boot, just the GUI).
+            ARGS+=(-- "$ROM")
+        fi
     else
         ARGS+=(-r "$ROM")
     fi

@@ -234,13 +234,28 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 大分区上，不占 12G 根分区。
 
 Weston/libinput 直接忽略手柄（`device is a joystick or a gamepad, ignoring`），
-Qt 前端本来只能键盘操作，所以 GUI 期间用 gptokeyb（PortMaster 同一个工具，
-映射在 `/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
+Qt 前端本来只能键盘操作，所以用 gptokeyb（PortMaster 同一个工具，映射在
+`/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
 Qt。`Select+Start` 是 gptokeyb 自己的退出组合，这段时间 killer_daemon 和 ogage
 停掉，退出后再拉起来。必须带 `-sudokill`：Vita3K 里 SDL 装了 SIGTERM handler 而
 Qt 主循环从不处理它（`pump_sdl_events()` 没有 `SDL_EVENT_QUIT` 分支），普通
-`killall` 杀不动，只有 SIGKILL 有效。游戏窗口本身忽略按键事件
-（`GameWindow::keyPressEvent` 直接 `ignore()`），不会和被模拟的 Vita 手柄重复。
+`killall` 杀不动，只有 SIGKILL 有效。
+
+**这些按键在游戏里也有效，而且每个按键会到两次。** `GameWindow::keyPressEvent`
+确实直接 `ignore()`，但 `CtrlKeyboardFilter` 是装在同一个窗口上的 event filter
+（`main_window.cpp`），跑在 `keyPressEvent` 之前，所以键盘照样能驱动被模拟的 Vita
+手柄。同时 gptokeyb **没有** `EVIOCGRAB` 独占手柄——`/proc/<pid>/fd` 里 gptokeyb
+和 Vita3K 打开的是同一个 `/dev/input/event4`——于是 SDL 手柄和 uinput 键盘两条路
+都会送同一个物理按键。原来的映射 `a = enter` 配 Vita3K 默认的
+`keyboard-button-start: Enter`，等于 A 键同时按下 Cross 和 Start。
+
+修法是让两条路落在同一个 Vita 按键上：`vita3k.gptk` 保持 GUI 好用的
+`a=enter / b=esc / x=space / y=backspace`，`start=insert / back=delete`，
+`l1/r1/l2/r2=pageup/pagedown/home/end`；`psvita-launch.sh` 首次运行时把 Vita3K 的
+键盘绑定改成对应的 `cross=Enter / circle=Escape / square=Space /
+triangle=Backspace / start=Insert / select=Delete / L1=PageUp …`，用
+`/roms/vita3k/.darkos-controls` 标记只做一次，之后用户在 Vita3K 自己的控制设置里
+改键不会被覆盖。这样 A 在 GUI 里是"确定"，在游戏里是 Cross，两边都对。
 
 构建：`.github/workflows/build-vita3k.yml` 在 `ubuntu-24.04-arm` 上用 gcc-14 编
 `nckstwrt/Vita3K-Plus` 的 `v1.4-Corrected`，Qt 6.11.0 走官方 `linux_arm64`
@@ -298,55 +313,97 @@ preload 过就跳过）。排查时注意 Qt 是用 `RTLD_DEEPBIND` dlopen 插�
 `LD_PRELOAD` 一个 getenv/connect 的 shim 看不到任何调用，得用 strace 或
 `LD_DEBUG`——strace 显示整个 abort 过程里一个 `socket()`/`connect()` 都没有。
 
+**位置参数前面必须加 `--`。** Vita3K 的 CLI11 把以 `/` 开头的参数当成 Windows
+风格选项，所以 `Vita3K -F /roms/psvita/game.vpk` 里的路径会被静默吃掉：
+`content-path` 是空的，既不装也不自动启动，只弹出 GUI，日志里连
+`input-content-path:` 都没有。`Vita3K -F -- /roms/...` 才正常。
+`psvita-launch.sh` 已经这么传。排查时还踩到一个坑：Vita3K 吞 SIGTERM，
+`timeout 30 Vita3K …` 会一直等下去，必须 `timeout -s KILL`。
+
+**Mali 的 Vulkan 没有 Wayland WSI，用 `vulkan-wsi-layer` 补。** 设备的
+`libmali-bifrost-g52-g29p1.so`（`arm_release_ver: g29p1-12eac0, rk_so_ver: 4`，
+内核 DDK g25p0，`arm,mali-bifrost` kbase，`/dev/mali0`）是 gbm winsys 变体：
+`NEEDED` 里只有 libdrm，没有 wayland 库，EGL 也只有合成器侧的
+`EGL_WL_bind_wayland_display`，没有 `EGL_KHR_platform_wayland`。Vulkan 实例扩展
+一共 13 个，WSI 相关只有 `VK_KHR_surface`、`VK_KHR_display`、
+`VK_EXT_headless_surface`，**没有 `VK_KHR_wayland_surface`**
+（`vkEnumerateInstanceExtensionProperties` 实测，不是字符串猜测），所以 Vita3K
+默认的 Vulkan 后端在 Weston 下建不出 surface。OpenGL 后端也不行：
+`create_gl_context()` 要桌面 GL 4.4+ CoreProfile，Mali 只有 GLES 3.2。
+
+补法是 ARM 的 window system integration layer（这里用 ginkage 分支）：它自己用
+dma-buf 建 swapchain，再通过 linux-dmabuf 交给 Wayland，对外补出
+`VK_KHR_wayland_surface`。设备条件本来就齐：`/dev/dma_heap/system-uncached`、
+`VK_KHR_external_memory_fd`、`VK_EXT_image_drm_format_modifier`、
+`VK_EXT_external_memory_dma_buf`、`VK_EXT_queue_family_foreign` 全在。
+`.github/workflows/build-vita3k-wsi.yml` 在 `ubuntu-24.04-arm` 上编，
+`-DBUILD_WSI_WAYLAND=1 -DBUILD_WSI_X11=0 -DBUILD_WSI_HEADLESS=0
+-DBUILD_WSI_DISPLAY=0 -DSELECT_EXTERNAL_ALLOCATOR=dma_buf_heaps
+-DWSIALLOC_MEMORY_HEAP_NAME=system-uncached`，同样 `-march=armv8-a
+-moutline-atomics`。两个注意点：
+
+- layer 的 main 分支用了 `VK_KHR_present_id2`/`present_wait2`/`EXT_present_timing`，
+  Debian trixie 的 Vulkan 头（1.4.309）还没有，必须钉 Khronos 的
+  `Vulkan-Headers`（这里 v1.4.368）并用 `-DVULKAN_CXX_INCLUDE` 指过去；
+- 它是**隐式层**，开关是 `VK_ADD_IMPLICIT_LAYER_PATH`。`VK_ADD_LAYER_PATH` 只管
+  显式层，设了也毫无反应（实测扩展列表纹丝不动）。
+
+装到 `/opt/vita3k-wsi`（`image_build/install_vita3k_wsi.sh`），
+`psvita-launch.sh` 只对 Vita3K 这棵进程树导出该变量，系统其它地方照旧直接用 blob。
+
 验证：`weston-screenshooter` 和 `weston-debug` 只有在 Weston 带 `--debug` 时才
 授权（否则 `unauthorized`），所以 `psvita-launch.sh` 认 `PSVITA_WESTON_DEBUG=1`，
 默认关闭。截图文件名由 screenshooter 自己定（`wayland-screenshot-<时间>.png`，
 落在当前目录），命令行参数会被忽略；`weston-debug scene-graph` 能直接看到
 toplevel 的 PID、app_id 和已提交的 buffer，是比截图更硬的渲染证据。
 
-状态：**Qt 前端已在设备上跑通**。走真实的 ES 入口启动，`weston-debug scene-graph`
-看到 `View 0 (role xdg_toplevel, PID …, top-level window 'Welcome to Vita3K' of
-Vita3K)`，1024x768 全不透明 SHM buffer；截图是正确的欢迎对话框，日志里有
-`Loaded stylesheet 'light'` 和 `[CTRL] 'rk3562-joystick' connected on port 0`。
-输入链路也验证过：用 uinput 注入 Tab/方向键后截图里的焦点框从
-"Commercial Compatibility List" 移到了 "Show next time"，即
-手柄 → gptokeyb/uinput → Weston → Qt 全程通。退出后 ES、ogage、killer_daemon
-都正常恢复。
+状态：**游戏已经在设备上跑起来了**。固件、游戏、渲染、输入、退出全链路验证过。
 
-**但实际游戏还跑不起来，卡在 GPU 驱动的 WSI 上。** 设备的
-`libmali-bifrost-g52-g29p1.so`（内核 DDK g25p0，`arm,mali-bifrost` kbase，
-`/dev/mali0`）是 gbm winsys 变体：`NEEDED` 里只有 libdrm，没有 wayland 库，EGL 也
-只有 `EGL_WL_bind_wayland_display`（合成器侧）而没有 `EGL_KHR_platform_wayland`。
-它的 Vulkan 实例扩展一共 13 个，WSI 相关只有：
+固件用 `--firmware <PUP>` 装（`QT_QPA_PLATFORM=offscreen` + `SDL_AUDIODRIVER=dummy`
+就能无头装，因为 `--firmware` 在进 GUI 前就返回 `QuitRequested`，但 QApplication
+还是先构造了）：主固件 3.74 → `vs0` 1473 个文件 296M，字库 3.73 → `sa0` 178 个文件
+111M。预装 PUP（`pd0`）没装，用不上。
+
+游戏是 Blast 'Em Bunnies（PCSE00328），NoNpDrm 解包目录（`app/` + `patch/`）走
+`-- <目录>` 安装，app 和 1.01 补丁都进了 `ux0/app/PCSE00328`，约 9 秒。注意
+**`/roms` 是 exFAT，不能建符号链接**（`ln -s` 直接 `Operation not permitted`），
+所以游戏目录只能 `mv` 成 ASCII 名，不能靠软链绕开中文路径。
+
+渲染证据（`weston-debug scene-graph`）：
 
 ```
-VK_KHR_surface   VK_KHR_display   VK_EXT_headless_surface
+View 0 (role xdg_toplevel, PID …, top-level window 'Blast 'Em Bunnies (PCSE00328)
+        | Vulkan | 30 FPS (34 ms) | 960x544 | Bilinear' of Vita3K):
+        dmabuf buffer
 ```
 
-`VK_KHR_wayland_surface` **不存在**（`vkEnumerateInstanceExtensionProperties` 实测，
-不是字符串猜测）。Vita3K 默认后端就是 Vulkan
-（`config.h` 的 `backend_renderer = "Vulkan"`），设备侧必需扩展
-`VK_KHR_swapchain`/`VK_KHR_storage_buffer_storage_class`/`VK_KHR_maintenance1`
-都在，唯独缺这个呈现用的实例扩展，所以在 Weston 下建不出 surface。OpenGL 后端也
-不行：`game_window.cpp` 的 `create_gl_context()` 要桌面 GL 4.4+ CoreProfile，Mali
-只有 GLES 3.2。另外**还没有 PS Vita 固件和游戏**，`--firmware <PUP>` 和 `.vpk`
-安装都待测。
+`dmabuf buffer` 就是 WSI layer 的 dma-buf swapchain 经 linux-dmabuf 交给 Weston 的
+那条路；GUI 阶段是 SHM buffer，两者一眼能分清。截图是正确的标题画面和 3D 场景，
+不是黑屏。A53 上开场 30 FPS，着色器编译期间掉到 9–15 FPS，之后回到 15–30 FPS；
+`[MEMSNAP]` 显示进程 RSS 760–960 MiB、dmabuf 3 个 fd 9 MiB，2G 内存够用但没多少余量。
 
-可行的补法（按代价排序）：
+Qt 前端本身也早就跑通了：`Loaded stylesheet 'light'`、
+`[CTRL] 'rk3562-joystick' connected on port 0`，用 uinput 注入 Tab/方向键后截图里
+焦点框会移动，即手柄 → gptokeyb/uinput → Weston → Qt 全程通。退出后 ES、ogage、
+killer_daemon 都正常恢复。
 
-1. `vulkan-wsi-layer`（ARM 上游 / ginkage 分支）——一个 Vulkan 隐式层，自己用
-   dma-buf 建 swapchain 再通过 linux-dmabuf 交给 Wayland，对外补出
-   `VK_KHR_wayland_surface`。设备条件已经齐了：`/dev/dma_heap/system-uncached`、
-   `VK_KHR_external_memory_fd`、`VK_EXT_queue_family_foreign`、
-   `VK_KHR_bind_memory2` 都在，gcc 12 / cmake 3.31 / wayland+gbm+libdrm 头文件也
-   都有（只缺 `vulkan/vulkan.h`）。用 `VK_ADD_LAYER_PATH` 只对 Vita3K 生效，
-   不动系统 libMali。
-2. 换 wayland winsys 的 libmali 变体（上游有 `-wayland-gbm` 包），但要么整体替换
-   系统 blob（影响 ES/Weston/所有 GLES 程序），要么在同一进程里塞两份 libMali
-   （EGL 和 `wl_*` 符号会再打一次架），风险都比第 1 条大。
-3. 切 panfrost/panvk：要换内核 GPU 驱动，且 G52 上的 panvk 还不成熟。
-4. lavapipe 软件渲染：A53 上跑 Vita 模拟不现实。
-5. 给 Vita3K 打 `VK_KHR_display` 补丁：改动大，而且 Weston 已经占着 DRM master。
+游戏内输入也验证过：注入 A（enter → Cross）关掉了游戏自己的 PSN 提示框并进入
+教学关，R1（pagedown）开局，截图里是带血条/计分/雷达/枪管的实时 3D 画面，计时器
+在走、敌人会被打掉。改键前后对比见上面 gptokeyb 那一节。
+
+**自动启动有两个坑，都在 `psvita-launch.sh` 里绕过了。**
+
+1. Welcome 对话框是模态的，`main_window.cpp` 里 `welcome.exec()` 跑在 `app.exec()`
+   之前，而自动启动是 `QTimer::singleShot(0, … boot_game(title_id))`——事件循环没
+   起来，定时器永远不触发。所以默认 `show-welcome: true` 时，`-r TITLEID` 明明传
+   进去了（日志有 `input-installed-path:`），游戏就是不启动，只停在欢迎框。
+   启动器现在把 `show-welcome: false` 和 `boot-apps-full-screen: true` 写进
+   `/roms/vita3k/config.yml`。
+2. `main.cpp` 判断目录安装是否自动启动用的是 `install_contents(...) == 1`，而
+   `install_contents` 返回的是**装成功的条目数**：app + patch 的目录返回 2，条件
+   不成立，于是装完就停在 GUI。`.vpk`/`.zip` 走的是另一条分支（按 `category=="gd"`
+   挑 title），不受影响。启动器的处理是：目录且 `ux0/app/<同名 TITLEID>` 已存在时
+   改用 `-r TITLEID`，所以第二次起就能直接进游戏。
 
 ## 电池与 USB
 
