@@ -62,7 +62,7 @@ jobs:
       - name: Install Qt 6.11 (official linux_arm64)
         run: |
           python3 -m pip install --user --break-system-packages aqtinstall
-          python3 -m aqt list-qt linux_arm64 desktop --modules 6.11.0 || true
+          python3 -m aqt list-qt linux_arm64 desktop --modules 6.11.0 linux_gcc_arm64 || true
           python3 -m aqt install-qt linux_arm64 desktop 6.11.0 linux_gcc_arm64 \
             -m qtmultimedia qtimageformats \
             -O "$HOME/Qt"
@@ -71,12 +71,10 @@ jobs:
           echo "QTDIR=$QTDIR" >> "$GITHUB_ENV"
           test -f "$QTDIR/bin/qmake" || test -f "$QTDIR/bin/qtpaths"
           # dArkOS has no X server: the Wayland platform plugin is mandatory.
-          if ! ls "$QTDIR"/plugins/platforms/libqwayland-*.so >/dev/null 2>&1; then
-            python3 -m aqt install-qt linux_arm64 desktop 6.11.0 linux_gcc_arm64 \
-              -m qtwayland -O "$HOME/Qt" || true
-          fi
+          # qtwayland is part of the base archives (not an add-on module) and
+          # Qt 6.11 ships it as a single libqwayland.so.
           ls -l "$QTDIR/plugins/platforms/"
-          ls "$QTDIR"/plugins/platforms/libqwayland-*.so >/dev/null 2>&1 || {
+          ls "$QTDIR"/plugins/platforms/libqwayland*.so >/dev/null 2>&1 || {
             echo "::error::Qt 6.11 linux_arm64 has no Wayland platform plugin"; exit 1; }
 
       - name: Configure Vita3K
