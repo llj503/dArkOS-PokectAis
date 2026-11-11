@@ -452,6 +452,28 @@ if [ -d "$M/tempthemes" ]; then
 fi
 log "EmulationStation Tools menu, zh labels, preloaded themes installed"
 
+# ---- Azahar 3DS libretro core (Vulkan via malisx2) ----
+AZAHAR_VER=${AZAHAR_VER:-20261111}
+AZAHAR_NAME=pocketAis-Azahar-libretro-armv8a-${AZAHAR_VER}
+curl -fsSL --retry 3 -o "$PS2_DL/${AZAHAR_NAME}.tar.zst" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/azahar-libretro-armv8a-${AZAHAR_VER}/${AZAHAR_NAME}.tar.zst" \
+  || { log "ERROR: Azahar core download failed"; exit 1; }
+curl -fsSL --retry 3 -o "$PS2_DL/${AZAHAR_NAME}.tar.zst.sha256" \
+  "https://github.com/llj503/dArkOS-PokectAis/releases/download/azahar-libretro-armv8a-${AZAHAR_VER}/${AZAHAR_NAME}.tar.zst.sha256" \
+  || { log "ERROR: Azahar checksum download failed"; exit 1; }
+(cd "$PS2_DL" && sha256sum -c "${AZAHAR_NAME}.tar.zst.sha256") \
+  || { log "ERROR: Azahar checksum failed"; exit 1; }
+rm -rf /tmp/azahar-libretro && mkdir -p /tmp/azahar-libretro
+tar --zstd -xf "$PS2_DL/${AZAHAR_NAME}.tar.zst" -C /tmp/azahar-libretro
+test -s /tmp/azahar-libretro/azahar_libretro.so || { log "ERROR: Azahar core missing"; exit 1; }
+RA_CORES="$M/home/ark/.config/retroarch/cores"
+install -d "$RA_CORES"
+install -m 0755 /tmp/azahar-libretro/azahar_libretro.so "$RA_CORES/azahar_libretro.so"
+install -m 0644 /tmp/azahar-libretro/azahar_libretro.info "$RA_CORES/azahar_libretro.info"
+chown 1000:1000 "$RA_CORES/azahar_libretro.so" "$RA_CORES/azahar_libretro.info"
+python3 "$SCRIPT_DIR/patch_es_3ds.py" "$M/etc/emulationstation/es_systems.cfg"
+log "Azahar 3DS libretro core installed"
+
 # Route ES children (ports) through ALSA softvol so system volume keys work in-game.
 mkdir -p "$M/etc/systemd/system/emulationstation.service.d"
 cat > "$M/etc/systemd/system/emulationstation.service.d/audio.conf" <<'AUDEOF'
@@ -489,6 +511,12 @@ grep -q 'msgid "SHOW NETWORK ICON"' \
 THEME_COUNT=$(find "$V/home/ark/.emulationstation/themes" -maxdepth 2 -name theme.xml 2>/dev/null | wc -l)
 [ "$THEME_COUNT" -ge 5 ] || { log "ERROR: preloaded themes missing ($THEME_COUNT)"; exit 1; }
 log "installed themes: $THEME_COUNT"
+test -s "$V/home/ark/.config/retroarch/cores/azahar_libretro.so" \
+  || { log "ERROR: Azahar core missing in image"; exit 1; }
+grep -q 'name="3ds"' "$V/etc/emulationstation/es_systems.cfg" \
+  || { log "ERROR: ES 3ds system missing"; exit 1; }
+grep -q 'azahar_libretro.so' "$V/etc/emulationstation/es_systems.cfg" \
+  || { log "ERROR: ES 3ds command missing"; exit 1; }
 for f in /opt/ngp-panel/ngp-wifi-gui /opt/ngp-panel/ngp-panel-gui "/opt/system/网络设置.sh" /usr/local/sbin/pocketais-usb-role-watch /usr/local/sbin/pocketais-autoexpand; do
   test -e "$V$f" && log "OK  $f" || { log "ERROR: missing $f in image"; exit 1; }
 done
@@ -530,7 +558,7 @@ fi
 grep -qE '^LABEL=ROMS[[:space:]]+/roms[[:space:]]' "$V/etc/fstab" || { log "ERROR: /roms fstab is not LABEL=ROMS"; exit 1; }
 grep -q 'LABEL=ROMS' "$V/usr/local/sbin/pocketais-autoexpand" || { log "ERROR: autoexpand is not label-based"; exit 1; }
 grep -q "title=dArkOS (${VERSION})" "$V/usr/share/plymouth/themes/text.plymouth" || { log "ERROR: Plymouth version not updated"; exit 1; }
-log "ES size=$ES_SIZE; p4 verify OK (ES tools, PortMaster owner, ark sudo, ARMSX2/malisx2 zh, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
+log "ES size=$ES_SIZE; p4 verify OK (ES tools, Azahar 3ds, PortMaster owner, ark sudo, ARMSX2/malisx2 zh, PCSX2 SA zh, fstab label, autoexpand label, Plymouth ${VERSION})"
 umount /mnt/imgroot; /sbin/losetup -d "$LOOPV"; rmdir /mnt/imgroot
 
 log "=== [6/8] clean p3 (loop) : rm markers + authorized_keys ==="
