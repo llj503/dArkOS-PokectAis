@@ -31,8 +31,8 @@ chmod +x "$BUNDLE/vita3k.sh" "$BUNDLE/vita3k"
 
 echo "== installing launcher =="
 install -m 0755 "$SCRIPTS/psvita-launch.sh" /usr/local/bin/psvita-launch.sh
-mkdir -p /roms/psvita /roms/vita3k
-chown ark:ark /roms/psvita /roms/vita3k
+mkdir -p /roms/psvita /roms/vita3k /roms/ports
+chown ark:ark /roms/psvita /roms/vita3k /roms/ports
 install -m 0755 -o ark -g ark "$SCRIPTS/vita3k-ports-gui.sh" "/roms/ports/Vita3K.sh"
 [ -e "$BUNDLE/portable" ] || ln -s /roms/vita3k "$BUNDLE/portable"
 
