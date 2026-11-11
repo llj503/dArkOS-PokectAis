@@ -61,9 +61,13 @@ jobs:
       - name: Install build packages
         run: |
           sudo apt-get update
+          # layer/private_data.hpp includes xcb/xcb.h and X11/Xlib.h
+          # unconditionally, so the X11 client headers are needed even with
+          # BUILD_WSI_X11=0.
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config git \
-            libwayland-dev wayland-protocols libdrm-dev zstd
+            libwayland-dev wayland-protocols libdrm-dev zstd \
+            libxcb1-dev libx11-dev
 
       - name: Configure
         working-directory: wsi
