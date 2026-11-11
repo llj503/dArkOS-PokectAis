@@ -48,10 +48,10 @@ jobs:
       - name: Install Qt 6.11 (official linux_arm64)
         run: |
           python3 -m pip install --user aqtinstall
-          python3 -m aqt install-qt linux_arm64 desktop 6.11.0 gcc_arm64 \
-            -m qtsvg qtmultimedia qttools qtimageformats \
+          python3 -m aqt install-qt linux_arm64 desktop 6.11.0 linux_gcc_arm64 \
+            -m qtmultimedia qtimageformats \
             -O "$HOME/Qt"
-          QTDIR=$(find "$HOME/Qt/6.11.0" -maxdepth 1 -type d -name 'gcc_arm64' | head -1)
+          QTDIR=$(find "$HOME/Qt/6.11.0" -maxdepth 1 -mindepth 1 -type d | head -1)
           [ -n "$QTDIR" ] || { echo "Qt 6.11 arm64 install not found"; find "$HOME/Qt" -maxdepth 3 -type d; exit 1; }
           echo "QTDIR=$QTDIR" >> "$GITHUB_ENV"
           test -f "$QTDIR/bin/qmake" || test -f "$QTDIR/bin/qtpaths"
