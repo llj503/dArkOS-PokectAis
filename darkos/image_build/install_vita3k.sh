@@ -44,6 +44,17 @@ else
     python3 "$SCRIPTS/patch_es_vita.py" "$ESCFG"
 fi
 
+echo "== theme =="
+# es-theme-nes-box has no psvita art, so the carousel row would be blank.
+THEMESET=$(sed -n 's/.*<string name="ThemeSet" value="\([^"]*\)".*/\1/p' \
+    /home/ark/.emulationstation/es_settings.cfg 2>/dev/null | head -1)
+THEME="/home/ark/.emulationstation/themes/${THEMESET:-es-theme-nes-box}"
+if [ -d "$THEME" ] && [ ! -d "$THEME/psvita" ] && [ -r "$SCRIPTS/make_psvita_theme.py" ]; then
+    python3 "$SCRIPTS/make_psvita_theme.py" "$THEME" \
+        || echo "  skipped (Pillow unavailable), the row will have no logo"
+    chown -R ark:ark "$THEME/psvita" 2>/dev/null || true
+fi
+
 echo "== restarting ES =="
 systemctl restart emulationstation
 echo "installed. Games: /roms/psvita (.vpk/.zip). GUI: Ports -> Vita3K."

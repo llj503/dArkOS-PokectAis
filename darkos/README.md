@@ -256,9 +256,28 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 设 `$ORIGIN` 相对 RPATH，并写入 `BUILD-INFO.txt`（源码 commit、子模块、外部系统库
 清单）。设备上安装用 `image_build/install_vita3k.sh <bundle.tar.zst>`。
 
+闭包必须对着 Qt 安装目录解析：插件拷进 bundle 后 `$ORIGIN` 相对 RPATH 指向的是
+还没填好的 `pkg/lib`，`ldd` 会把尚未拷入的 Qt 模块报成 `not found` 而被静默丢掉。
+`libQt6WaylandClient.so.6` 就这么漏过一次，设备上平台插件转去绑系统自带的
+Qt 6.8，报 `undefined symbol: _ZTI20QGenericUnixServices, version
+Qt_6_PRIVATE_API` 后 abort。现在走闭包时 `LD_LIBRARY_PATH` 指向 `$QTDIR/lib`，
+任何解析不到的依赖直接让打包失败，并单独断言 Wayland 客户端模块在包里。
+
+Mali blob 只提供 `libEGL`/`libGLESv2`（都指向 `libMali.so`），没有 GLVND 的
+`libGL.so.1`/`libGLX.so.0`/`libGLdispatch.so.0`，而官方 Qt 的 `Qt6Gui` 链接桌面
+GL，所以这三个也一起打进 `lib/`；实际渲染仍走设备的 EGL。同时裁掉
+designer/assistant/QML 工具、sqldrivers、printsupport、gtk3 平台主题和 GStreamer
+媒体后端——它们会再拖进别的 Qt 模块和 cups/mysql/postgresql/odbc/gstreamer。
+
+验证：`weston-screenshooter` 和 `weston-debug` 只有在 Weston 带 `--debug` 时才
+授权（否则 `unauthorized`），所以 `psvita-launch.sh` 认 `PSVITA_WESTON_DEBUG=1`，
+默认关闭。截图文件名由 screenshooter 自己定（`wayland-screenshot-<时间>.png`，
+落在当前目录），命令行参数会被忽略；`weston-debug scene-graph` 能直接看到
+toplevel 的 PID、app_id 和已提交的 buffer，是比截图更硬的渲染证据。
+
 状态：Weston DRM 后端已在 G52 上验证（GLES 3.2，DSI-1 1024x768@59.9，ark 客户端
-可连接）。**还没有 PS Vita 固件和游戏**，所以目前只能验证到 Qt 界面能显示；
-`--firmware <PUP>` 装固件、`.vpk` 安装运行都待测。
+可连接，截图链路已跑通）。**还没有 PS Vita 固件和游戏**，所以目前只能验证到 Qt
+界面能显示；`--firmware <PUP>` 装固件、`.vpk` 安装运行都待测。
 
 ## 电池与 USB
 
