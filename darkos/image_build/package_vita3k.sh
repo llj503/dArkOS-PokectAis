@@ -203,6 +203,26 @@ export SDL_GAMECONTROLLERCONFIG="${SDL_GAMECONTROLLERCONFIG:-1900a4dd726b3335363
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
 export AUDIODEV="${AUDIODEV:-default}"
 
+# Rockchip's libMali.so statically links libwayland-client/server and exports
+# their wl_* symbols. Qt6Gui loads libEGL -> libMali into the global scope before
+# the wayland platform plugin is dlopened, so Qt6WaylandClient would bind
+# wl_display_connect to Mali's copy, which cannot connect: Qt aborts with
+# "Failed to create wl_display (No such file or directory)" even though the
+# socket exists. Preloading the real client puts it ahead of libMali.
+# psvita-launch.sh does the same; skip it if the launcher already did.
+case "${LD_PRELOAD:-}" in
+    *libwayland-client*) ;;
+    *)
+        for c in /lib/aarch64-linux-gnu/libwayland-client.so.0 \
+                 /usr/lib/aarch64-linux-gnu/libwayland-client.so.0; do
+            if [ -e "$c" ]; then
+                export LD_PRELOAD="$c${LD_PRELOAD:+:$LD_PRELOAD}"
+                break
+            fi
+        done
+        ;;
+esac
+
 exec "$HERE/@EXE@" "$@"
 EOF
 sed -i "s|@EXE@|$EXE|g" "$PKG/vita3k.sh"

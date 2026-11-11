@@ -136,6 +136,8 @@ echo "VAR=Vita3K" > /home/ark/.config/KILLIT
 # Weston/libinput refuses gamepads, so the Qt GUI would be keyboard-only.
 # gptokeyb (the same tool PortMaster uses) turns the pad into uinput keys.
 # It owns Select+Start while it runs, so killer_daemon stands down.
+# -sudokill: Vita3K's SDL installs a SIGTERM handler the Qt loop never acts on,
+# so a plain killall would leave it running; the exit combo has to SIGKILL.
 GPTOKEYB=/opt/inttools/gptokeyb
 GPTK=/usr/local/share/vita3k.gptk
 GPTK_PID=
@@ -144,7 +146,7 @@ if [ -x "$GPTOKEYB" ] && [ -r "$GPTK" ]; then
     systemctl stop killer_daemon.service >/dev/null 2>&1 || true
     systemctl stop ogage.service >/dev/null 2>&1 || true
     SDL_GAMECONTROLLERCONFIG_FILE=/opt/inttools/gamecontrollerdb.txt \
-        "$GPTOKEYB" -1 Vita3K -c "$GPTK" >/dev/null 2>&1 &
+        "$GPTOKEYB" -1 Vita3K -sudokill -c "$GPTK" >/dev/null 2>&1 &
     GPTK_PID=$!
 else
     systemctl restart killer_daemon.service >/dev/null 2>&1 || true
@@ -155,6 +157,25 @@ fi
 RK_MAP=$(grep -m1 '^1900a4dd726b333536322d6a6f797300,' \
     /opt/inttools/gamecontrollerdb.txt 2>/dev/null || true)
 [ -n "$RK_MAP" ] && export SDL_GAMECONTROLLERCONFIG="$RK_MAP"
+
+# Rockchip's libMali.so statically links libwayland-client/server and exports all
+# of their wl_* symbols. Qt6Gui pulls libEGL -> libMali into the global scope
+# before the wayland platform plugin is dlopened, so Qt6WaylandClient binds
+# wl_display_connect to Mali's copy instead of the real client. That copy cannot
+# connect: Qt aborts with "Failed to create wl_display (No such file or
+# directory)" while the socket is plainly there and weston clients work.
+# LD_DEBUG=bindings shows the binding going to libEGL.so.1. Preloading the real
+# libwayland-client puts it ahead of libMali in the global scope.
+WL_CLIENT=
+for c in /lib/aarch64-linux-gnu/libwayland-client.so.0 \
+         /usr/lib/aarch64-linux-gnu/libwayland-client.so.0; do
+    [ -e "$c" ] && WL_CLIENT="$c" && break
+done
+if [ -n "$WL_CLIENT" ]; then
+    export LD_PRELOAD="$WL_CLIENT${LD_PRELOAD:+:$LD_PRELOAD}"
+else
+    echo "psvita: libwayland-client.so.0 not found, Qt may bind to libMali's copy" >&2
+fi
 
 ARGS=(-F)
 if [ -n "$ROM" ]; then

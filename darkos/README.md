@@ -231,8 +231,16 @@ socket 建好后 `chmod 0666` 让 ark 的 Qt 连得上。
 ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `Vita3K.sh`
 打开 GUI（装固件、设置、已安装应用列表）。Vita3K 用 portable 模式，
 `/opt/vita3k/portable` 是指向 `/roms/vita3k` 的软链接，固件/游戏/配置/缓存都落在
-大分区上，不占 12G 根分区。`Select+Start` 经 killer_daemon（`VAR=Vita3K`，CMake 的
-`OUTPUT_NAME` 就是 `Vita3K`）退出。
+大分区上，不占 12G 根分区。
+
+Weston/libinput 直接忽略手柄（`device is a joystick or a gamepad, ignoring`），
+Qt 前端本来只能键盘操作，所以 GUI 期间用 gptokeyb（PortMaster 同一个工具，
+映射在 `/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
+Qt。`Select+Start` 是 gptokeyb 自己的退出组合，这段时间 killer_daemon 和 ogage
+停掉，退出后再拉起来。必须带 `-sudokill`：Vita3K 里 SDL 装了 SIGTERM handler 而
+Qt 主循环从不处理它（`pump_sdl_events()` 没有 `SDL_EVENT_QUIT` 分支），普通
+`killall` 杀不动，只有 SIGKILL 有效。游戏窗口本身忽略按键事件
+（`GameWindow::keyPressEvent` 直接 `ignore()`），不会和被模拟的 Vita 手柄重复。
 
 构建：`.github/workflows/build-vita3k.yml` 在 `ubuntu-24.04-arm` 上用 gcc-14 编
 `nckstwrt/Vita3K-Plus` 的 `v1.4-Corrected`，Qt 6.11.0 走官方 `linux_arm64`
@@ -254,7 +262,9 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 打包由 `image_build/package_vita3k.sh` 负责：沿 `ldd` 闭包收 Qt 私有依赖
 （ICU、pcre2-16、double-conversion，`libQt6*` 通配会漏），给主程序、库和插件分别
 设 `$ORIGIN` 相对 RPATH，并写入 `BUILD-INFO.txt`（源码 commit、子模块、外部系统库
-清单）。设备上安装用 `image_build/install_vita3k.sh <bundle.tar.zst>`。
+清单）。设备上安装用 `image_build/install_vita3k.sh <bundle.tar.zst>`：先解到
+`/opt/vita3k.new.XXXXXX` 再整体换名，失败也不会把正在用的 bundle 弄坏；`mktemp`
+建出来是 0700，换名后要 `chmod 0755`，否则以 ark 身份跑的 GUI 进不去目录。
 
 闭包必须对着 Qt 安装目录解析：插件拷进 bundle 后 `$ORIGIN` 相对 RPATH 指向的是
 还没填好的 `pkg/lib`，`ldd` 会把尚未拷入的 Qt 模块报成 `not found` 而被静默丢掉。
@@ -269,15 +279,74 @@ GL，所以这三个也一起打进 `lib/`；实际渲染仍走设备的 EGL。�
 designer/assistant/QML 工具、sqldrivers、printsupport、gtk3 平台主题和 GStreamer
 媒体后端——它们会再拖进别的 Qt 模块和 cups/mysql/postgresql/odbc/gstreamer。
 
+**Mali blob 抢走了 `wl_*` 符号**，这是 Qt 界面起不来的真正原因。Rockchip 的
+`libMali.so` 把 libwayland-client 和 libwayland-server 静态链了进去，还导出了 64
+个 `wl_*` 符号（`wl_display_connect`、`wl_proxy_marshal`、`wl_client_*`、
+`wl_resource_*` …）。Qt6Gui 先把 `libEGL` → `libMali` 拉进全局作用域，之后才
+dlopen wayland 平台插件，于是 `libQt6WaylandClient.so.6` 把 `wl_display_connect`
+绑到了 Mali 那一份上，而它连不上：Qt 报 `Failed to create wl_display (No such
+file or directory)` 后 abort，socket 明明在，weston 自带客户端也正常。
+`LD_DEBUG=bindings` 是决定性证据：
+
+```
+binding file /opt/vita3k/lib/libQt6WaylandClient.so.6 [0] to /lib/aarch64-linux-gnu/libEGL.so.1 [0]: normal symbol `wl_display_connect'
+```
+
+修法是 `LD_PRELOAD` 真正的 `/lib/aarch64-linux-gnu/libwayland-client.so.0`，让它排
+在 libMali 前面；`psvita-launch.sh` 和包里的 `vita3k.sh` 都做（后者检测到已经
+preload 过就跳过）。排查时注意 Qt 是用 `RTLD_DEEPBIND` dlopen 插件的，所以
+`LD_PRELOAD` 一个 getenv/connect 的 shim 看不到任何调用，得用 strace 或
+`LD_DEBUG`——strace 显示整个 abort 过程里一个 `socket()`/`connect()` 都没有。
+
 验证：`weston-screenshooter` 和 `weston-debug` 只有在 Weston 带 `--debug` 时才
 授权（否则 `unauthorized`），所以 `psvita-launch.sh` 认 `PSVITA_WESTON_DEBUG=1`，
 默认关闭。截图文件名由 screenshooter 自己定（`wayland-screenshot-<时间>.png`，
 落在当前目录），命令行参数会被忽略；`weston-debug scene-graph` 能直接看到
 toplevel 的 PID、app_id 和已提交的 buffer，是比截图更硬的渲染证据。
 
-状态：Weston DRM 后端已在 G52 上验证（GLES 3.2，DSI-1 1024x768@59.9，ark 客户端
-可连接，截图链路已跑通）。**还没有 PS Vita 固件和游戏**，所以目前只能验证到 Qt
-界面能显示；`--firmware <PUP>` 装固件、`.vpk` 安装运行都待测。
+状态：**Qt 前端已在设备上跑通**。走真实的 ES 入口启动，`weston-debug scene-graph`
+看到 `View 0 (role xdg_toplevel, PID …, top-level window 'Welcome to Vita3K' of
+Vita3K)`，1024x768 全不透明 SHM buffer；截图是正确的欢迎对话框，日志里有
+`Loaded stylesheet 'light'` 和 `[CTRL] 'rk3562-joystick' connected on port 0`。
+输入链路也验证过：用 uinput 注入 Tab/方向键后截图里的焦点框从
+"Commercial Compatibility List" 移到了 "Show next time"，即
+手柄 → gptokeyb/uinput → Weston → Qt 全程通。退出后 ES、ogage、killer_daemon
+都正常恢复。
+
+**但实际游戏还跑不起来，卡在 GPU 驱动的 WSI 上。** 设备的
+`libmali-bifrost-g52-g29p1.so`（内核 DDK g25p0，`arm,mali-bifrost` kbase，
+`/dev/mali0`）是 gbm winsys 变体：`NEEDED` 里只有 libdrm，没有 wayland 库，EGL 也
+只有 `EGL_WL_bind_wayland_display`（合成器侧）而没有 `EGL_KHR_platform_wayland`。
+它的 Vulkan 实例扩展一共 13 个，WSI 相关只有：
+
+```
+VK_KHR_surface   VK_KHR_display   VK_EXT_headless_surface
+```
+
+`VK_KHR_wayland_surface` **不存在**（`vkEnumerateInstanceExtensionProperties` 实测，
+不是字符串猜测）。Vita3K 默认后端就是 Vulkan
+（`config.h` 的 `backend_renderer = "Vulkan"`），设备侧必需扩展
+`VK_KHR_swapchain`/`VK_KHR_storage_buffer_storage_class`/`VK_KHR_maintenance1`
+都在，唯独缺这个呈现用的实例扩展，所以在 Weston 下建不出 surface。OpenGL 后端也
+不行：`game_window.cpp` 的 `create_gl_context()` 要桌面 GL 4.4+ CoreProfile，Mali
+只有 GLES 3.2。另外**还没有 PS Vita 固件和游戏**，`--firmware <PUP>` 和 `.vpk`
+安装都待测。
+
+可行的补法（按代价排序）：
+
+1. `vulkan-wsi-layer`（ARM 上游 / ginkage 分支）——一个 Vulkan 隐式层，自己用
+   dma-buf 建 swapchain 再通过 linux-dmabuf 交给 Wayland，对外补出
+   `VK_KHR_wayland_surface`。设备条件已经齐了：`/dev/dma_heap/system-uncached`、
+   `VK_KHR_external_memory_fd`、`VK_EXT_queue_family_foreign`、
+   `VK_KHR_bind_memory2` 都在，gcc 12 / cmake 3.31 / wayland+gbm+libdrm 头文件也
+   都有（只缺 `vulkan/vulkan.h`）。用 `VK_ADD_LAYER_PATH` 只对 Vita3K 生效，
+   不动系统 libMali。
+2. 换 wayland winsys 的 libmali 变体（上游有 `-wayland-gbm` 包），但要么整体替换
+   系统 blob（影响 ES/Weston/所有 GLES 程序），要么在同一进程里塞两份 libMali
+   （EGL 和 `wl_*` 符号会再打一次架），风险都比第 1 条大。
+3. 切 panfrost/panvk：要换内核 GPU 驱动，且 G52 上的 panvk 还不成熟。
+4. lavapipe 软件渲染：A53 上跑 Vita 模拟不现实。
+5. 给 Vita3K 打 `VK_KHR_display` 补丁：改动大，而且 Weston 已经占着 DRM master。
 
 ## 电池与 USB
 
