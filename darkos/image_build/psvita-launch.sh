@@ -28,6 +28,7 @@ if [ "${PSVITA_SESSION:-}" != "1" ]; then
     sudo systemctl reset-failed psvita-session.service 2>/dev/null || true
     exec sudo systemd-run --unit=psvita-session --collect \
         --setenv=PSVITA_SESSION=1 \
+        --setenv=PSVITA_WESTON_DEBUG="${PSVITA_WESTON_DEBUG:-0}" \
         --working-directory=/home/ark \
         /usr/local/bin/psvita-launch.sh "$ROM"
 fi
@@ -100,7 +101,13 @@ sleep 2
 set_governors
 
 export XDG_RUNTIME_DIR="$RTDIR"
+# PSVITA_WESTON_DEBUG=1 adds --debug, which is what authorises the
+# weston-screenshooter / weston-debug protocols. Off by default: it exposes the
+# compositor's debug protocol to every client.
+WESTON_EXTRA=()
+[ "${PSVITA_WESTON_DEBUG:-0}" = "1" ] && WESTON_EXTRA+=(--debug)
 weston --backend=drm-backend.so --shell=kiosk-shell.so --idle-time=0 \
+    "${WESTON_EXTRA[@]}" \
     --socket="$SOCK" --log="$DATA/weston.log" >"$DATA/weston.out" 2>&1 &
 WESTON_PID=$!
 for _ in $(seq 1 60); do
