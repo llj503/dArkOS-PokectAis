@@ -218,6 +218,47 @@ release 资产；`.github/workflows/build-malisx2.yml` 在 `ubuntu-24.04-arm` �
 ROCKNIX 的 cross 文件是 cortex-a55），发布 `malisx2-a53-<版本>` release 资产。
 镜像构建脚本下载它们与 `pcsx2sa-zh-20261103`，并校验 SHA-256。
 
+## PS Vita：Vita3K-Plus（Qt + Weston）
+
+Vita3K 只有 Qt 桌面前端，而 dArkOS 没有 X/Wayland 会话，所以显示层用 Weston 的
+DRM 后端临时顶替 ES：`/usr/local/bin/psvita-launch.sh` 先把自己从 ES 的 cgroup
+里挪出去（`systemd-run --unit=psvita-session`，否则 `systemctl stop
+emulationstation` 会连自己一起杀掉），再停 ES → 起 Weston（root，kiosk-shell）→
+以 ark 身份跑 Vita3K → 退出后停 Weston、恢复 ES 和调频策略。Weston 必须用 root：
+libseat 的 builtin 后端要打开 `/dev/tty0`，而 seat0 上没有可借用的 logind 会话；
+socket 建好后 `chmod 0666` 让 ark 的 Qt 连得上。
+
+ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `Vita3K.sh`
+打开 GUI（装固件、设置、已安装应用列表）。Vita3K 用 portable 模式，
+`/opt/vita3k/portable` 是指向 `/roms/vita3k` 的软链接，固件/游戏/配置/缓存都落在
+大分区上，不占 12G 根分区。`Select+Start` 经 killer_daemon（`VAR=vita3k`）退出。
+
+构建：`.github/workflows/build-vita3k.yml` 在 `ubuntu-24.04-arm` 上用 gcc-14 编
+`nckstwrt/Vita3K-Plus` 的 `v1.4-Corrected`，Qt 6.11.0 走官方 `linux_arm64`
+（`linux_gcc_arm64`）在线仓库，发行版都没有这么新的 Qt。`-march=armv8-a
+-moutline-atomics`，发布 `vita3k-plus-armv8a-<版本>` release 资产。
+
+`v1.4-Corrected` 这个 tag 和它自己不同步，`image_build/patch_vita3k.py` 修三处：
+
+1. 补没提交的生成头 `vita3k/util/include/util/fork_build.h`（`logging.cpp` 要用；
+   不要在里面定义 `RELEASE_VERSION`）；
+2. `codec/src/atrac9.cpp` 调 `Atrac9DecodeBounded()`，但 tag 钉住的 LibAtrac9
+   gitlink（`82767fe3`，master 也一样）只导出 `Atrac9Decode()`。不动子模块，改为
+   在本地加一个带上界的包装：拷一份不超过 `superframe_data_left` 字节、零填充的
+   私有缓冲再解码，消费超出上界就判失败（LibAtrac9 的 BitReaderCxt 没有长度字段）；
+3. `renderer/src/vulkan/surface_cache.cpp` 里 `copy.imageOffset = { ... }` 在
+   C++23 + 钉住的 Vulkan-Headers 下二义（`operator=(VkOffset3D const&)` 和隐式
+   拷贝/移动赋值），显式写出 `vk::Offset3D{ ... }` / `vk::Extent3D{ ... }`。
+
+打包由 `image_build/package_vita3k.sh` 负责：沿 `ldd` 闭包收 Qt 私有依赖
+（ICU、pcre2-16、double-conversion，`libQt6*` 通配会漏），给主程序、库和插件分别
+设 `$ORIGIN` 相对 RPATH，并写入 `BUILD-INFO.txt`（源码 commit、子模块、外部系统库
+清单）。设备上安装用 `image_build/install_vita3k.sh <bundle.tar.zst>`。
+
+状态：Weston DRM 后端已在 G52 上验证（GLES 3.2，DSI-1 1024x768@59.9，ark 客户端
+可连接）。**还没有 PS Vita 固件和游戏**，所以目前只能验证到 Qt 界面能显示；
+`--firmware <PUP>` 装固件、`.vpk` 安装运行都待测。
+
 ## 电池与 USB
 
 - `pocketais-battery-shim` 用 tmpfs 文件 bind-mount 覆盖
