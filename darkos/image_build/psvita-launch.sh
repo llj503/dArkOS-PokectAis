@@ -116,7 +116,8 @@ fi
 chmod 0666 "$RTDIR/$SOCK"
 
 # Select+Start kills the emulator; the EXIT trap then brings ES back.
-echo "VAR=vita3k" > /home/ark/.config/KILLIT
+# CMake names the executable Vita3K (OUTPUT_NAME), so that is the process name.
+echo "VAR=Vita3K" > /home/ark/.config/KILLIT
 systemctl restart killer_daemon.service >/dev/null 2>&1 || true
 
 ARGS=(-F)

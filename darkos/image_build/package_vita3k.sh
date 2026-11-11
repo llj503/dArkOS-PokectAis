@@ -18,9 +18,12 @@ PKG=$PWD/pkg
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-BIN=$(find "$BUILD" -type f -name vita3k | head -1)
+BIN=$(find "$BUILD/bin" -maxdepth 1 -type f -iname vita3k 2>/dev/null | head -1)
+[ -n "$BIN" ] || BIN=$(find "$BUILD" -type f -iname vita3k | head -1)
 [ -n "$BIN" ] || { echo "vita3k binary not found under $BUILD" >&2; exit 1; }
 BINDIR=$(dirname "$BIN")
+# CMake sets OUTPUT_NAME Vita3K, so the executable is bin/Vita3K on Linux.
+EXE=$(basename "$BIN")
 echo "== binary: $BIN"
 file "$BIN"
 
@@ -39,7 +42,7 @@ cp -a "$QTDIR"/plugins/. "$PKG/qtplugins/"
 mkdir -p "$TMP/seen"
 : > "$TMP/work"
 : > "$TMP/external"
-printf '%s\n' "$PKG/vita3k" >> "$TMP/work"
+printf '%s\n' "$PKG/$EXE" >> "$TMP/work"
 find "$PKG" -maxdepth 1 -type f -name '*.so*' >> "$TMP/work"
 find "$PKG/qtplugins" -type f -name '*.so' >> "$TMP/work"
 
@@ -47,11 +50,19 @@ deps_of() {
     ldd "$1" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /^\//) print $i}'
 }
 
+# A dependency ldd cannot resolve would silently disappear from the closure.
+MISSING=$TMP/missing
+: > "$MISSING"
+check_missing() {
+    ldd "$1" 2>/dev/null | grep "not found" | sed "s|^|$(basename "$1"): |" >> "$MISSING" || true
+}
+
 while [ -s "$TMP/work" ]; do
     f=$(head -1 "$TMP/work")
     tail -n +2 "$TMP/work" > "$TMP/work.next"
     mv "$TMP/work.next" "$TMP/work"
     [ -f "$f" ] || continue
+    check_missing "$f"
     while read -r dep; do
         [ -e "$dep" ] || continue
         base=$(basename "$dep")
@@ -77,9 +88,13 @@ done
 
 echo "== system libraries left to the device =="
 sort -u "$TMP/external" | tee "$TMP/external.sorted"
+if [ -s "$MISSING" ]; then
+    echo "== WARNING: unresolved dependencies =="
+    sort -u "$MISSING"
+fi
 
 # --- RPATHs ------------------------------------------------------------------
-patchelf --set-rpath '$ORIGIN/lib' "$PKG/vita3k"
+patchelf --set-rpath '$ORIGIN/lib' "$PKG/$EXE"
 for f in "$PKG"/lib/*.so*; do
     [ -f "$f" ] || continue
     patchelf --set-rpath '$ORIGIN' "$f"
@@ -93,7 +108,7 @@ while read -r f; do
     patchelf --set-rpath "\$ORIGIN/$rel" "$f"
 done < <(find "$PKG/qtplugins" -type f -name '*.so')
 
-strip --strip-unneeded "$PKG/vita3k" 2>/dev/null || true
+strip --strip-unneeded "$PKG/$EXE" 2>/dev/null || true
 find "$PKG/lib" "$PKG/qtplugins" -type f -name '*.so*' -exec strip --strip-unneeded {} + 2>/dev/null || true
 
 # --- launcher ----------------------------------------------------------------
@@ -121,8 +136,9 @@ export SDL_GAMECONTROLLERCONFIG="${SDL_GAMECONTROLLERCONFIG:-1900a4dd726b3335363
 export SDL_AUDIODRIVER="${SDL_AUDIODRIVER:-alsa}"
 export AUDIODEV="${AUDIODEV:-default}"
 
-exec "$HERE/vita3k" "$@"
+exec "$HERE/@EXE@" "$@"
 EOF
+sed -i "s|@EXE@|$EXE|g" "$PKG/vita3k.sh"
 chmod +x "$PKG/vita3k.sh"
 
 # --- build provenance --------------------------------------------------------

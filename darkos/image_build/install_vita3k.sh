@@ -26,8 +26,8 @@ fi
 echo "== extracting to $BUNDLE =="
 mkdir -p "$BUNDLE"
 tar --zstd -xf "$TARBALL" -C "$BUNDLE"
-chmod +x "$BUNDLE/vita3k.sh" "$BUNDLE/vita3k"
-[ -x "$BUNDLE/vita3k" ] || { echo "$BUNDLE/vita3k missing after extract" >&2; exit 1; }
+chmod +x "$BUNDLE/vita3k.sh" "$BUNDLE/Vita3K"
+[ -x "$BUNDLE/Vita3K" ] || { echo "$BUNDLE/Vita3K missing after extract" >&2; exit 1; }
 
 echo "== installing launcher =="
 install -m 0755 "$SCRIPTS/psvita-launch.sh" /usr/local/bin/psvita-launch.sh

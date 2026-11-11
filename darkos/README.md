@@ -231,7 +231,8 @@ socket 建好后 `chmod 0666` 让 ark 的 Qt 连得上。
 ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `Vita3K.sh`
 打开 GUI（装固件、设置、已安装应用列表）。Vita3K 用 portable 模式，
 `/opt/vita3k/portable` 是指向 `/roms/vita3k` 的软链接，固件/游戏/配置/缓存都落在
-大分区上，不占 12G 根分区。`Select+Start` 经 killer_daemon（`VAR=vita3k`）退出。
+大分区上，不占 12G 根分区。`Select+Start` 经 killer_daemon（`VAR=Vita3K`，CMake 的
+`OUTPUT_NAME` 就是 `Vita3K`）退出。
 
 构建：`.github/workflows/build-vita3k.yml` 在 `ubuntu-24.04-arm` 上用 gcc-14 编
 `nckstwrt/Vita3K-Plus` 的 `v1.4-Corrected`，Qt 6.11.0 走官方 `linux_arm64`
