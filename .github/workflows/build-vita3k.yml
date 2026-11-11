@@ -1,0 +1,125 @@
+name: Vita3K-Plus ARMv8.0 (Pocket AIS)
+
+# Builds the Vita3K-Plus Qt desktop frontend for Cortex-A53 (RK3562).
+# Qt 6.11 is installed from Qt's linux_arm64 online repository because no
+# distribution ships a new enough Qt. The bundle includes the Qt runtime and
+# is intended to run under Weston (DRM/KMS) on dArkOS.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag suffix"
+        required: true
+        default: "20261111"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 360
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: vita3k-plus-armv8a-${{ inputs.version }}
+      NAME: pocketAis-Vita3KPlus-armv8a-${{ inputs.version }}
+
+    steps:
+      - name: Checkout Vita3K-Plus
+        uses: actions/checkout@v4
+        with:
+          repository: nckstwrt/Vita3K-Plus
+          ref: v1.4-Corrected
+          path: vita3k
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            build-essential cmake ninja-build git pkg-config python3 python3-pip patchelf zstd \
+            libssl-dev libasound2-dev libpulse-dev libjack-dev libsndio-dev libfribidi-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev libdrm-dev libgbm-dev libegl-dev libgles-dev libgl-dev libvulkan-dev \
+            libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev libpipewire-0.3-dev \
+            libwayland-dev libdecor-0-dev liburing-dev libgtk-3-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
+
+      - name: Install Qt 6.11 (official linux_arm64)
+        run: |
+          python3 -m pip install --user aqtinstall
+          python3 -m aqt install-qt linux_arm64 6.11.0 linux_arm64 \
+            -m qtsvg qtmultimedia qttools qtimageformats \
+            -O "$HOME/Qt"
+          QTDIR=$(find "$HOME/Qt/6.11.0" -maxdepth 1 -type d -name 'gcc_arm64' | head -1)
+          [ -n "$QTDIR" ] || { echo "Qt 6.11 arm64 install not found"; find "$HOME/Qt" -maxdepth 3 -type d; exit 1; }
+          echo "QTDIR=$QTDIR" >> "$GITHUB_ENV"
+          test -f "$QTDIR/bin/qmake" || test -f "$QTDIR/bin/qtpaths"
+
+      - name: Configure Vita3K
+        working-directory: vita3k
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QTDIR" \
+            -DVITA3K_FORCE_CUSTOM_BOOST=ON \
+            -DENABLE_DISCORD_RICH_PRESENCE=OFF \
+            -DCMAKE_C_FLAGS="-march=armv8-a -moutline-atomics" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a -moutline-atomics" \
+            .
+
+      - name: Build vita3k
+        working-directory: vita3k
+        run: cmake --build build --target vita3k -j $(nproc)
+
+      - name: Package bundle
+        working-directory: vita3k
+        run: |
+          set -e
+          BIN=$(find build -type f -name vita3k | head -1)
+          [ -n "$BIN" ] || { echo "vita3k binary not found"; exit 1; }
+          BINDIR=$(dirname "$BIN")
+          file "$BIN"
+          rm -rf pkg && mkdir -p pkg/lib pkg/qtplugins
+          cp -a "$BINDIR"/. pkg/
+          cp -a "$QTDIR"/lib/libQt6*.so.6* pkg/lib/ 2>/dev/null || true
+          cp -a "$QTDIR"/plugins/. pkg/qtplugins/
+          patchelf --set-rpath '$ORIGIN/lib' pkg/vita3k
+          cat > pkg/vita3k.sh <<'EOF'
+          #!/bin/sh
+          HERE=$(cd "$(dirname "$0")" && pwd)
+          export QT_QPA_PLATFORM=wayland
+          export QT_PLUGIN_PATH="$HERE/qtplugins"
+          export LD_LIBRARY_PATH="$HERE/lib:$LD_LIBRARY_PATH"
+          exec "$HERE/vita3k" "$@"
+          EOF
+          chmod +x pkg/vita3k.sh
+          tar --zstd -cf "$NAME.tar.zst" -C pkg .
+          sha256sum "$NAME.tar.zst" > "$NAME.tar.zst.sha256"
+          ls -lh "$NAME.tar.zst"
+          cat "$NAME.tar.zst.sha256"
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: vita3k
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Vita3K-Plus ARMv8.0 ${VERSION} (Pocket AIS)" \
+              --prerelease \
+              --notes "Vita3K-Plus v1.4-Corrected Qt frontend for Cortex-A53/RK3562, bundled Qt 6.11, -march=armv8-a -moutline-atomics. Runs under Weston on dArkOS."
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vita3k-plus-armv8a-${{ inputs.version }}
+          path: |
+            vita3k/pocketAis-Vita3KPlus-armv8a-${{ inputs.version }}.tar.zst
+            vita3k/pocketAis-Vita3KPlus-armv8a-${{ inputs.version }}.tar.zst.sha256
