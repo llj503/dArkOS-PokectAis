@@ -34,6 +34,16 @@ jobs:
           submodules: recursive
           fetch-depth: 1
 
+      - name: Provide missing fork_build.h
+        working-directory: vita3k
+        run: |
+          cat > vita3k/util/include/util/fork_build.h <<'EOF'
+          #pragma once
+          #define FORK_BUILD_SEQ 1
+          #define FORK_BUILD_CHANGES "v1.4-Corrected"
+          #define RELEASE_VERSION 1
+          EOF
+
       - name: Install build packages
         run: |
           sudo apt-get update
