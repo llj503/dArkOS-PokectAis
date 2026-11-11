@@ -1,0 +1,110 @@
+name: Azahar libretro ARMv8.0 (Pocket AIS)
+
+# Builds Azahar's official libretro core for Cortex-A53 (RK3562), Vulkan-only.
+# The Qt frontend needs X11/Wayland, which dArkOS does not run; RetroArch is
+# already present and its Vulkan context works with malisx2.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag suffix"
+        required: true
+        default: "20261111"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04-arm
+    timeout-minutes: 240
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: azahar-libretro-armv8a-${{ inputs.version }}
+      NAME: pocketAis-Azahar-libretro-armv8a-${{ inputs.version }}
+
+    steps:
+      - name: Checkout Azahar
+        uses: actions/checkout@v4
+        with:
+          repository: azahar-emu/azahar
+          ref: 2127.0-rc2
+          path: azahar
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Install build packages
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install build-essential cmake ninja-build git python3 pkg-config llvm gcc-12 g++-12
+
+      - name: Configure libretro core
+        working-directory: azahar
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_LIBRETRO=ON \
+            -DENABLE_VULKAN=ON \
+            -DENABLE_OPENGL=OFF \
+            -DENABLE_LTO=OFF \
+            -DCMAKE_C_COMPILER=gcc-12 \
+            -DCMAKE_CXX_COMPILER=g++-12 \
+            -DCMAKE_C_FLAGS="-march=armv8-a -moutline-atomics" \
+            -DCMAKE_CXX_FLAGS="-march=armv8-a -moutline-atomics" \
+            .
+
+      - name: Build azahar_libretro
+        working-directory: azahar
+        run: cmake --build build --target citra_libretro --config Release -j $(nproc)
+
+      - name: Verify and package
+        working-directory: azahar
+        run: |
+          set -e
+          CORE=$(find build -name 'azahar_libretro.so' -type f | head -1)
+          [ -n "$CORE" ] || { echo "azahar_libretro.so not found"; exit 1; }
+          file "$CORE"
+          echo "LSE instruction count: $(objdump -d "$CORE" | grep -cE '\b(casal|casl|ldaddal|swpal)\b' || true)"
+          rm -rf pkg && mkdir -p pkg
+          cp "$CORE" pkg/azahar_libretro.so
+          printf '%s\n' \
+            'display_name = "Nintendo - 3DS (Azahar)"' \
+            'authors = "Azahar Emulator Project"' \
+            'supported_extensions = "3ds|3dsx|elf|axf|cci|cxi|app|cia"' \
+            'corename = "Azahar"' \
+            'categories = "Emulator"' \
+            'systemname = "Nintendo 3DS"' \
+            'systemid = "nintendo_3ds"' \
+            'manufacturer = "Nintendo"' \
+            'license = "GPLv3"' \
+            'display_version = "2127.0-rc2"' \
+            'supports_no_game = "false"' \
+            > pkg/azahar_libretro.info
+          tar --zstd -cf "$NAME.tar.zst" -C pkg .
+          sha256sum "$NAME.tar.zst" > "$NAME.tar.zst.sha256"
+          ls -lh "$NAME.tar.zst"
+          cat "$NAME.tar.zst.sha256"
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: azahar
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" "$NAME.tar.zst" "$NAME.tar.zst.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Azahar libretro ARMv8.0 ${VERSION} (Pocket AIS)" \
+              --prerelease \
+              --notes "Azahar 2127.0-rc2 libretro core for Cortex-A53/RK3562, Vulkan-only, -march=armv8-a -moutline-atomics. For RetroArch on dArkOS."
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: azahar-libretro-armv8a-${{ inputs.version }}
+          path: |
+            azahar/pocketAis-Azahar-libretro-armv8a-${{ inputs.version }}.tar.zst
+            azahar/pocketAis-Azahar-libretro-armv8a-${{ inputs.version }}.tar.zst.sha256
