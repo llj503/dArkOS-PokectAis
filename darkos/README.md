@@ -243,8 +243,11 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 Weston/libinput 直接忽略手柄（`device is a joystick or a gamepad, ignoring`），
 Qt 前端本来只能键盘操作，所以用 gptokeyb（PortMaster 同一个工具，映射在
 `/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
-Qt。`Select+Start` 是 gptokeyb 自己的退出组合，这段时间 killer_daemon 和 ogage
-停掉，退出后再拉起来。必须带 `-sudokill`：Vita3K 里 SDL 装了 SIGTERM handler 而
+Qt。`Select+Start` 是 gptokeyb 自己的退出组合，这段时间 killer_daemon 停掉、
+退出后再拉起来；ogage **不停**——它是音量/亮度/静音的热键监听，只读 evdev、不
+grab 也不写 uinput，和 gptokeyb 并存没问题（PortMaster 里就是这么共存的），停掉
+它整局游戏音量键就死了。Vita3K 走 ALSA softvol，ogage 的 `volume.sh` 对它生效。
+必须带 `-sudokill`：Vita3K 里 SDL 装了 SIGTERM handler 而
 Qt 主循环从不处理它（`pump_sdl_events()` 没有 `SDL_EVENT_QUIT` 分支），普通
 `killall` 杀不动，只有 SIGKILL 有效。
 
@@ -269,7 +272,7 @@ triangle=Backspace / start=Insert / select=Delete / L1=PageUp …`，用
 （`linux_gcc_arm64`）在线仓库，发行版都没有这么新的 Qt。`-march=armv8-a
 -moutline-atomics`，发布 `vita3k-plus-armv8a-<版本>` release 资产。
 
-`v1.4-Corrected` 这个 tag 和它自己不同步，`image_build/patch_vita3k.py` 修三处：
+`v1.4-Corrected` 这个 tag 和它自己不同步，`image_build/patch_vita3k.py` 修四处：
 
 1. 补没提交的生成头 `vita3k/util/include/util/fork_build.h`（`logging.cpp` 要用；
    不要在里面定义 `RELEASE_VERSION`）；
@@ -279,7 +282,9 @@ triangle=Backspace / start=Insert / select=Delete / L1=PageUp …`，用
    私有缓冲再解码，消费超出上界就判失败（LibAtrac9 的 BitReaderCxt 没有长度字段）；
 3. `renderer/src/vulkan/surface_cache.cpp` 里 `copy.imageOffset = { ... }` 在
    C++23 + 钉住的 Vulkan-Headers 下二义（`operator=(VkOffset3D const&)` 和隐式
-   拷贝/移动赋值），显式写出 `vk::Offset3D{ ... }` / `vk::Extent3D{ ... }`。
+   拷贝/移动赋值），显式写出 `vk::Offset3D{ ... }` / `vk::Extent3D{ ... }`；
+4. `main.cpp` CLI 装完内容后把自动启动的 title 写进局部 `cfg`，而 `app::init()`
+   早已把它 move 进 `EmuEnvState`，MainWindow 读的是另一份（详见下面"自动启动"）。
 
 打包由 `image_build/package_vita3k.sh` 负责：沿 `ldd` 闭包收 Qt 私有依赖
 （ICU、pcre2-16、double-conversion，`libQt6*` 通配会漏），给主程序、库和插件分别

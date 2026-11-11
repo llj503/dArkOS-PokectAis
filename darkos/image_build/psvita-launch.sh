@@ -144,7 +144,11 @@ GPTK_PID=
 if [ -x "$GPTOKEYB" ] && [ -r "$GPTK" ]; then
     chmod 666 /dev/uinput 2>/dev/null || true
     systemctl stop killer_daemon.service >/dev/null 2>&1 || true
-    systemctl stop ogage.service >/dev/null 2>&1 || true
+    # ogage stays up: it is the volume/brightness/mute hotkey listener, and it
+    # only reads evdev (no grab, no uinput), so it coexists with gptokeyb exactly
+    # like it does under PortMaster. Stopping it would leave the volume keys
+    # dead for the whole session; Vita3K's ALSA output goes through softvol, so
+    # ogage's volume.sh applies to it.
     SDL_GAMECONTROLLERCONFIG_FILE=/opt/inttools/gamecontrollerdb.txt \
         "$GPTOKEYB" -1 Vita3K -sudokill -c "$GPTK" >/dev/null 2>&1 &
     GPTK_PID=$!
