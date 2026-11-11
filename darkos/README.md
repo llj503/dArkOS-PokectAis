@@ -233,6 +233,13 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 `/opt/vita3k/portable` 是指向 `/roms/vita3k` 的软链接，固件/游戏/配置/缓存都落在
 大分区上，不占 12G 根分区。
 
+装的时候要两个 release 资产，顺序无所谓但缺一不可：
+`install_vita3k.sh <pocketAis-Vita3KPlus-armv8a-*.tar.zst>` 装模拟器和 ES 入口，
+`install_vita3k_wsi.sh <pocketAis-vita3k-wsi-a53-*.tar.zst>` 装 Wayland WSI 层。
+少了后者 GUI 能起来，但一进游戏就建不出 Vulkan surface。固件在 GUI 里装，或者
+`vita3k.sh --firmware <PSVUPDAT.PUP>`（字库 PUP 再装一次）。游戏把 `.vpk`/`.zip`
+丢进 `/roms/psvita`，ES 里直接启动，装完自动进游戏。
+
 Weston/libinput 直接忽略手柄（`device is a joystick or a gamepad, ignoring`），
 Qt 前端本来只能键盘操作，所以用 gptokeyb（PortMaster 同一个工具，映射在
 `/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
@@ -391,7 +398,8 @@ killer_daemon 都正常恢复。
 教学关，R1（pagedown）开局，截图里是带血条/计分/雷达/枪管的实时 3D 画面，计时器
 在走、敌人会被打掉。改键前后对比见上面 gptokeyb 那一节。
 
-**自动启动有两个坑，都在 `psvita-launch.sh` 里绕过了。**
+**自动启动有三个坑。** 前两个在 `psvita-launch.sh` 里绕过，第三个是上游 bug，在
+`patch_vita3k.py` 里修。
 
 1. Welcome 对话框是模态的，`main_window.cpp` 里 `welcome.exec()` 跑在 `app.exec()`
    之前，而自动启动是 `QTimer::singleShot(0, … boot_game(title_id))`——事件循环没
@@ -401,9 +409,17 @@ killer_daemon 都正常恢复。
    `/roms/vita3k/config.yml`。
 2. `main.cpp` 判断目录安装是否自动启动用的是 `install_contents(...) == 1`，而
    `install_contents` 返回的是**装成功的条目数**：app + patch 的目录返回 2，条件
-   不成立，于是装完就停在 GUI。`.vpk`/`.zip` 走的是另一条分支（按 `category=="gd"`
-   挑 title），不受影响。启动器的处理是：目录且 `ux0/app/<同名 TITLEID>` 已存在时
-   改用 `-r TITLEID`，所以第二次起就能直接进游戏。
+   不成立；就算改成 `>= 1` 也没用，因为补丁的 category 是 `gp` 不是 `gd`，
+   `app_category == "gd"` 这一半照样过不去。启动器的处理是：目录且
+   `ux0/app/<同名 TITLEID>` 已存在时改用 `-r TITLEID`，所以第二次起直接进游戏。
+3. **`main.cpp` 把要自动启动的 title 写错了对象。** `app::init()` 里是
+   `state.cfg = std::move(cfg)`，而 `EmuEnvState::cfg` 是指向 `_cfg` 这个堆上
+   `Config` 的引用，和 main 里的局部 `cfg` 已经是两个对象。CLI 装完内容后
+   `cfg.run_app_path = boot_title_id` 写的是局部那份，MainWindow 读的是
+   `emuenv.cfg.run_app_path`，于是日志打了
+   `Content installed, will auto-boot: PCSE00328`，游戏却永远不启动。
+   `-r` 之所以正常，是因为它在 `app::init()` 之前就设好了。
+   `patch_vita3k.py` 把这一行改成 `emuenv.cfg.run_app_path`。
 
 ## 电池与 USB
 

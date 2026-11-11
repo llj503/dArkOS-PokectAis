@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make the Vita3K-Plus v1.4-Corrected tag build against its own pinned submodules.
 
-Two defects in the tag (both are "tag is out of sync with what the author built"):
+Four defects in the tag (the tag is out of sync with what the author built):
 
 1. ``vita3k/util/include/util/fork_build.h`` is a generated header that was never
    committed, but ``vita3k/util/src/logging.cpp`` includes it.  Recreate it.
@@ -19,6 +19,10 @@ Two defects in the tag (both are "tag is out of sync with what the author built"
    ``vk::Offset3D`` / ``vk::Extent3D`` members.  With the pinned Vulkan-Headers
    and C++23 that is ambiguous between ``operator=(VkOffset3D const &)`` and the
    implicit copy/move assignment, so name the type explicitly.
+
+4. ``vita3k/main.cpp`` records the title to auto-boot after a CLI install on its
+   own local ``Config``, which app::init() has already moved into EmuEnvState.
+   MainWindow reads ``emuenv.cfg``, so the game never starts.  Write to that one.
 
 Usage: patch_vita3k.py <vita3k-source-root>
 Idempotent: safe to run twice.
@@ -132,6 +136,31 @@ def patch_surface_cache(root: Path) -> None:
         print("surface_cache.cpp already patched")
 
 
+def patch_cli_autoboot(root: Path) -> None:
+    """main.cpp sets run_app_path on the wrong Config after a CLI install.
+
+    app::init() does ``state.cfg = std::move(cfg)``, and EmuEnvState::cfg is a
+    reference to a heap Config owned by _cfg -- a different object from main's
+    local ``cfg``.  MainWindow's auto-boot reads ``emuenv.cfg.run_app_path``, so
+    writing ``cfg.run_app_path`` after installing content from the command line
+    logs "Content installed, will auto-boot: <TITLE>" and then never boots.
+    Passing -r works because that path is set before app::init().
+    """
+    p = root / "vita3k" / "main.cpp"
+    t = p.read_text(encoding="utf-8")
+    old = "cfg.run_app_path = boot_title_id;"
+    new = "emuenv.cfg.run_app_path = boot_title_id;"
+    if new in t:
+        print("main.cpp auto-boot already patched")
+        return
+    if old not in t:
+        print(f"WARNING: expected line not found in {p}: {old}")
+        return
+    t = t.replace(old, new, 1)
+    p.write_text(t, encoding="utf-8")
+    print(f"patched {p} (auto-boot writes emuenv.cfg)")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -141,6 +170,7 @@ def main() -> None:
     patch_fork_build_h(root)
     patch_atrac9(root)
     patch_surface_cache(root)
+    patch_cli_autoboot(root)
 
 
 if __name__ == "__main__":
