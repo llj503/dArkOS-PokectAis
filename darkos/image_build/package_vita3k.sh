@@ -35,16 +35,43 @@ mkdir -p "$PKG/lib" "$PKG/qtplugins"
 cp -a "$BINDIR"/. "$PKG/"
 cp -a "$QTDIR"/plugins/. "$PKG/qtplugins/"
 
+# --- prune the plugin set ----------------------------------------------------
+# The full Qt install carries designer/assistant/QML tooling and the SQL,
+# printing and GTK platform-theme plugins. Vita3K uses none of them, and each
+# would drag in another Qt module (Quick, Help, Sql, PrintSupport, QmlCompiler)
+# plus cups/mysql/postgresql/odbc on the device. Drop them before the closure
+# walk so they cannot pull anything in.
+for d in designer help qmllint qmlls qmltooling sqldrivers printsupport \
+         platformthemes xcbglintegrations egldeviceintegrations; do
+    rm -rf "$PKG/qtplugins/$d"
+done
+# Only the Wayland platform is used; keep offscreen/minimal for headless runs.
+find "$PKG/qtplugins/platforms" -maxdepth 1 -type f -name '*.so' \
+    ! -name 'libqwayland.so' ! -name 'libqoffscreen.so' ! -name 'libqminimal.so' \
+    -delete
+# Qt's GStreamer media backend needs libgstplay/libgstphotography/libgstgl,
+# which neither the builder nor dArkOS installs. The FFmpeg backend ships its
+# own libraries inside the Qt install, so keep that one.
+rm -f "$PKG/qtplugins/multimedia/libgstreamermediaplugin.so"
+
 # --- collect the shared-library closure -------------------------------------
 # Only libraries that are not guaranteed to exist on dArkOS (Debian 13) are
 # bundled: everything from the Qt install, plus ICU / pcre2-16 /
-# double-conversion (Qt private deps) and the C++ runtime.
+# double-conversion (Qt private deps), the C++ runtime and the GLVND desktop-GL
+# trio (dArkOS ships the Mali blob, which has no libGL/libGLX/libGLdispatch).
 mkdir -p "$TMP/seen"
 : > "$TMP/work"
 : > "$TMP/external"
 printf '%s\n' "$PKG/$EXE" >> "$TMP/work"
 find "$PKG" -maxdepth 1 -type f -name '*.so*' >> "$TMP/work"
 find "$PKG/qtplugins" -type f -name '*.so' >> "$TMP/work"
+
+# The copied plugins carry $ORIGIN-relative RPATHs that now point into the
+# still-incomplete bundle, so without this LD_LIBRARY_PATH ldd reports every
+# not-yet-copied Qt module as "not found" and it silently drops out of the
+# closure. That is how libQt6WaylandClient went missing: at runtime the plugin
+# then bound to the device's own Qt 6.8 and died on a Qt_6_PRIVATE_API symbol.
+export LD_LIBRARY_PATH="$QTDIR/lib:$PKG/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 deps_of() {
     ldd "$1" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i ~ /^\//) print $i}'
@@ -73,6 +100,7 @@ while [ -s "$TMP/work" ]; do
             "$QTDIR"/*) bundle=1 ;;
             */libicu*|*/libpcre2-16*|*/libdouble-conversion*) bundle=1 ;;
             */libstdc++.so*|*/libgcc_s.so*) bundle=1 ;;
+            */libGL.so*|*/libGLX.so*|*/libGLdispatch.so*) bundle=1 ;;
         esac
         if [ "$bundle" = 1 ]; then
             if [ ! -e "$PKG/lib/$base" ]; then
@@ -89,9 +117,15 @@ done
 echo "== system libraries left to the device =="
 sort -u "$TMP/external" | tee "$TMP/external.sorted"
 if [ -s "$MISSING" ]; then
-    echo "== WARNING: unresolved dependencies =="
+    echo "::error::unresolved dependencies, the bundle would be incomplete:"
     sort -u "$MISSING"
+    exit 1
 fi
+# The Wayland client module is the one the platform plugin binds to; if it is
+# absent the plugin falls back to the device's own Qt and aborts on a private
+# API symbol. Fail loudly rather than shipping that.
+[ -e "$PKG/lib/libQt6WaylandClient.so.6" ] || {
+    echo "::error::libQt6WaylandClient.so.6 was not bundled" >&2; exit 1; }
 
 # --- RPATHs ------------------------------------------------------------------
 patchelf --set-rpath '$ORIGIN/lib' "$PKG/$EXE"
