@@ -13,7 +13,7 @@ block = '''\t<system>
 \t\t<fullname>Nintendo 3DS</fullname>
 \t\t<path>/roms/3ds</path>
 \t\t<extension>.3ds .3DS .3dsx .3DSX .cci .CCI .cxi .CXI .app .APP .cia .CIA .elf .ELF .axf .AXF</extension>
-\t\t<command>sudo perfmax %GOVERNOR% %ROM%; VK_ICD_FILENAMES=/opt/malisx2/malisx2.json nice -n -19 /usr/local/bin/retroarch -L /home/ark/.config/retroarch/cores/azahar_libretro.so %ROM%; sudo perfnorm</command>
+\t\t<command>sudo perfmax %GOVERNOR% %ROM%; nice -n -19 /usr/local/bin/retroarch -L /home/ark/.config/retroarch/cores/azahar_libretro.so %ROM%; sudo perfnorm</command>
 \t\t<emulators>
 \t\t\t<emulator name="retroarch">
 \t\t\t\t<cores>
