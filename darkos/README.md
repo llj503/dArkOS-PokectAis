@@ -241,25 +241,40 @@ ES 里新增 `psvita` 系统（`/roms/psvita`，`.vpk .zip`），Ports 里的 `V
 丢进 `/roms/psvita`，ES 里直接启动，装完自动进游戏。
 
 Weston/libinput 直接忽略手柄（`device is a joystick or a gamepad, ignoring`），
-Qt 前端本来只能键盘操作，所以用 gptokeyb（PortMaster 同一个工具，映射在
-`/usr/local/share/vita3k.gptk`）把按键转成 uinput 键盘事件，Weston 再交给
-Qt。`Select+Start` 是 gptokeyb 自己的退出组合，这段时间 killer_daemon 停掉、
-退出后再拉起来；ogage **不停**——它是音量/亮度/静音的热键监听，只读 evdev、不
-grab 也不写 uinput，和 gptokeyb 并存没问题（PortMaster 里就是这么共存的），停掉
-它整局游戏音量键就死了。Vita3K 走 ALSA softvol，ogage 的 `volume.sh` 对它生效。
-必须带 `-sudokill`：Vita3K 里 SDL 装了 SIGTERM handler 而
-Qt 主循环从不处理它（`pump_sdl_events()` 没有 `SDL_EVENT_QUIT` 分支），普通
-`killall` 杀不动，只有 SIGKILL 有效。
+Qt 前端本来只能键盘操作，所以用 `image_build/vita3k-pad.py`（装到
+`/usr/local/bin/vita3k-pad.py`）把按键转成 uinput 键盘事件：evdev 读
+`rk3562-joystick`，写一个名为 `vita3k-pad` 的 uinput 键盘，Weston 当普通键盘收下
+（日志 `device is a keyboard`）再交给 Qt。`Select+Start` 由它自己处理：SIGKILL
+Vita3K 后自行退出，启动器的 EXIT trap 再把 ES 拉回来；这段时间 killer_daemon 停
+掉、退出后再拉起来。ogage **不停**——它是音量/亮度/静音的热键监听，只读 evdev、不
+grab 也不写 uinput，和映射进程并存没问题（PortMaster 里就是这么共存的），停掉它整
+局游戏音量键就死了。Vita3K 走 ALSA softvol，ogage 的 `volume.sh` 对它生效。必须
+SIGKILL：Vita3K 里 SDL 装了 SIGTERM handler 而 Qt 主循环从不处理它
+（`pump_sdl_events()` 没有 `SDL_EVENT_QUIT` 分支），普通 `killall` 杀不动。
+
+**为什么不用 PortMaster 的 gptokeyb。** 在这台机器上它根本不建 uinput 键盘：进程
+拿着手柄的 evdev node，但 `/proc/<pid>/fd` 里没有 `/dev/uinput`，也不见新 evdev
+node，按键一个都到不了 Qt。更糟的是 `-1 Vita3K -sudokill` 的参数解析把 kill 目标
+留空，Select+Start 时执行 `kill -9 $(pidof -c )`，shell 报 usage 错误后 gptokeyb
+自己退出——整局输入随之全死（"所有按键都无法操控"就是这个）。用 PATH shim 录到的
+调用序列证实了这两点。映射表因此直接写在 `vita3k-pad.py` 顶部（`BTN_MAP`/`STICK`，
+左摇杆按死区转方向键），改键改那里；原来的 `vita3k.gptk` 已删除。手柄掉线重插时
+映射进程保留键盘、重新扫描 evdev，不会跟着死。
+
+验证到哪一步：`vita3k-pad` 键盘被 Weston 收下、Select+Start 杀 Vita3K 并回到 ES
+已端到端跑通（`image_build/tests/v3k-pad-live.py`，克隆一个同名手柄注入）；evdev
+层每个按键的键码也逐个对过（`tests/v3k-padmap-test.py`）。GUI 的应用列表只有一行
+时方向键看不出焦点变化，游戏内手柄待带自动启动修复的新 bundle 装上后复验。
 
 **这些按键在游戏里也有效，而且每个按键会到两次。** `GameWindow::keyPressEvent`
 确实直接 `ignore()`，但 `CtrlKeyboardFilter` 是装在同一个窗口上的 event filter
 （`main_window.cpp`），跑在 `keyPressEvent` 之前，所以键盘照样能驱动被模拟的 Vita
-手柄。同时 gptokeyb **没有** `EVIOCGRAB` 独占手柄——`/proc/<pid>/fd` 里 gptokeyb
+手柄。同时映射进程**没有** `EVIOCGRAB` 独占手柄——`/proc/<pid>/fd` 里它
 和 Vita3K 打开的是同一个 `/dev/input/event4`——于是 SDL 手柄和 uinput 键盘两条路
 都会送同一个物理按键。原来的映射 `a = enter` 配 Vita3K 默认的
 `keyboard-button-start: Enter`，等于 A 键同时按下 Cross 和 Start。
 
-修法是让两条路落在同一个 Vita 按键上：`vita3k.gptk` 保持 GUI 好用的
+修法是让两条路落在同一个 Vita 按键上：`vita3k-pad.py` 保持 GUI 好用的
 `a=enter / b=esc / x=space / y=backspace`，`start=insert / back=delete`，
 `l1/r1/l2/r2=pageup/pagedown/home/end`；`psvita-launch.sh` 首次运行时把 Vita3K 的
 键盘绑定改成对应的 `cross=Enter / circle=Escape / square=Space /
@@ -396,12 +411,13 @@ View 0 (role xdg_toplevel, PID …, top-level window 'Blast 'Em Bunnies (PCSE003
 
 Qt 前端本身也早就跑通了：`Loaded stylesheet 'light'`、
 `[CTRL] 'rk3562-joystick' connected on port 0`，用 uinput 注入 Tab/方向键后截图里
-焦点框会移动，即手柄 → gptokeyb/uinput → Weston → Qt 全程通。退出后 ES、ogage、
-killer_daemon 都正常恢复。
+焦点框会移动，即手柄 → vita3k-pad/uinput → Weston → Qt 全程通。退出后 ES、ogage、
+killer_daemon 都正常恢复（killer_daemon 以 `python3` 跑，`pidof killer_daemon`
+查不到它，要看 `systemctl is-active`）。
 
 游戏内输入也验证过：注入 A（enter → Cross）关掉了游戏自己的 PSN 提示框并进入
 教学关，R1（pagedown）开局，截图里是带血条/计分/雷达/枪管的实时 3D 画面，计时器
-在走、敌人会被打掉。改键前后对比见上面 gptokeyb 那一节。
+在走、敌人会被打掉。改键前后对比见上面输入映射那一节。
 
 **自动启动有三个坑。** 前两个在 `psvita-launch.sh` 里绕过，第三个是上游 bug，在
 `patch_vita3k.py` 里修。

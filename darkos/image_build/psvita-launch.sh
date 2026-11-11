@@ -48,7 +48,7 @@ chown ark:ark "$DATA" 2>/dev/null || true
 [ -e "$BUNDLE/portable" ] || ln -s "$DATA" "$BUNDLE/portable"
 
 WESTON_PID=
-GPTK_PID=
+PAD_PID=
 GOV_CPU=
 GOV_GPU=
 GOV_DMC=
@@ -82,9 +82,9 @@ restore_governors() {
 }
 
 cleanup() {
-    if [ -n "$GPTK_PID" ]; then
-        kill "$GPTK_PID" 2>/dev/null
-        kill -9 "$GPTK_PID" 2>/dev/null
+    if [ -n "$PAD_PID" ]; then
+        kill "$PAD_PID" 2>/dev/null
+        kill -9 "$PAD_PID" 2>/dev/null
     fi
     if [ -n "$WESTON_PID" ]; then
         kill "$WESTON_PID" 2>/dev/null
@@ -133,30 +133,36 @@ chmod 0666 "$RTDIR/$SOCK"
 # CMake names the executable Vita3K (OUTPUT_NAME), so that is the process name.
 echo "VAR=Vita3K" > /home/ark/.config/KILLIT
 
-# Weston/libinput refuses gamepads, so the Qt GUI would be keyboard-only.
-# gptokeyb (the same tool PortMaster uses) turns the pad into uinput keys.
-# It owns Select+Start while it runs, so killer_daemon stands down.
-# -sudokill: Vita3K's SDL installs a SIGTERM handler the Qt loop never acts on,
-# so a plain killall would leave it running; the exit combo has to SIGKILL.
-GPTOKEYB=/opt/inttools/gptokeyb
-GPTK=/usr/local/share/vita3k.gptk
-GPTK_PID=
-if [ -x "$GPTOKEYB" ] && [ -r "$GPTK" ]; then
+# Weston/libinput refuses gamepads ("device is a joystick or a gamepad,
+# ignoring"), so the Qt GUI would be keyboard-only. vita3k-pad.py reads the pad
+# with evdev and re-emits its buttons as a uinput keyboard, which Weston then
+# forwards to Qt. It owns Select+Start while it runs, so killer_daemon stands
+# down. Vita3K's SDL installs a SIGTERM handler the Qt loop never acts on, so the
+# exit combo has to SIGKILL -- which is what the mapper does.
+#
+# gptokeyb (the tool PortMaster uses) is not usable here: it never creates its
+# uinput keyboard on this device (no /dev/uinput fd and no new evdev node even
+# with the pad present at startup), and "-1 Vita3K -sudokill" leaves its kill
+# target empty, so Select+Start runs `kill -9` with no pid, the shell prints a
+# usage error and gptokeyb exits -- taking every mapped key down with it.
+PAD_MAPPER=/usr/local/bin/vita3k-pad.py
+PAD_PID=
+if [ -r "$PAD_MAPPER" ]; then
     chmod 666 /dev/uinput 2>/dev/null || true
     systemctl stop killer_daemon.service >/dev/null 2>&1 || true
     # ogage stays up: it is the volume/brightness/mute hotkey listener, and it
-    # only reads evdev (no grab, no uinput), so it coexists with gptokeyb exactly
-    # like it does under PortMaster. Stopping it would leave the volume keys
-    # dead for the whole session; Vita3K's ALSA output goes through softvol, so
-    # ogage's volume.sh applies to it.
-    SDL_GAMECONTROLLERCONFIG_FILE=/opt/inttools/gamecontrollerdb.txt \
-        "$GPTOKEYB" -1 Vita3K -sudokill -c "$GPTK" >/dev/null 2>&1 &
-    GPTK_PID=$!
+    # only reads evdev (no grab, no uinput), so it coexists with the mapper
+    # exactly like it does under PortMaster. Stopping it would leave the volume
+    # keys dead for the whole session; Vita3K's ALSA output goes through softvol,
+    # so ogage's volume.sh applies to it.
+    python3 "$PAD_MAPPER" Vita3K >"$DATA/vita3k-pad.log" 2>&1 &
+    PAD_PID=$!
 else
+    echo "psvita: $PAD_MAPPER missing, the pad cannot drive the GUI" >&2
     systemctl restart killer_daemon.service >/dev/null 2>&1 || true
 fi
 
-# Use the device's own controller mapping so Vita3K's SDL pad and gptokeyb
+# Use the device's own controller mapping so Vita3K's SDL pad and the uinput keys
 # agree on which physical button is A.
 RK_MAP=$(grep -m1 '^1900a4dd726b333536322d6a6f797300,' \
     /opt/inttools/gamecontrollerdb.txt 2>/dev/null || true)
@@ -217,9 +223,9 @@ prime_config() {
 prime_config show-welcome false
 prime_config boot-apps-full-screen true
 
-# gptokeyb does not EVIOCGRAB the pad, so Vita3K's SDL and the uinput keys both
-# see every button. Make the keyboard bindings agree with vita3k.gptk so the two
-# paths press the same Vita button instead of A meaning Cross *and* Start.
+# The mapper does not EVIOCGRAB the pad, so Vita3K's SDL and the uinput keys both
+# see every button. Make the keyboard bindings agree with vita3k-pad.py's table so
+# the two paths press the same Vita button instead of A meaning Cross *and* Start.
 # Done once: after this the user can remap in Vita3K's own controls dialog.
 if [ ! -e "$DATA/.darkos-controls" ]; then
     prime_config keyboard-button-cross Enter
