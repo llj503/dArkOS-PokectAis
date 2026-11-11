@@ -24,10 +24,24 @@ if [ -r "$TARBALL.sha256" ]; then
 fi
 
 echo "== extracting to $BUNDLE =="
-mkdir -p "$BUNDLE"
-tar --zstd -xf "$TARBALL" -C "$BUNDLE"
-chmod +x "$BUNDLE/vita3k.sh" "$BUNDLE/Vita3K"
-[ -x "$BUNDLE/Vita3K" ] || { echo "$BUNDLE/Vita3K missing after extract" >&2; exit 1; }
+# Stage first, then swap. Extracting straight over an older bundle leaves stale
+# Qt modules behind that can shadow the new ones, and a failed extract would
+# leave a half-written install. Vita data lives in /roms/vita3k (portable is a
+# symlink into it), so the bundle directory itself is disposable.
+STAGE=$(mktemp -d /opt/vita3k.new.XXXXXX)
+trap 'rm -rf "$STAGE"' EXIT
+tar --zstd -xf "$TARBALL" -C "$STAGE"
+chmod +x "$STAGE/vita3k.sh" "$STAGE/Vita3K"
+[ -x "$STAGE/Vita3K" ] || { echo "$STAGE/Vita3K missing after extract" >&2; exit 1; }
+if [ -d "$BUNDLE" ]; then
+    rm -rf "$BUNDLE.old"
+    mv "$BUNDLE" "$BUNDLE.old"
+fi
+mv "$STAGE" "$BUNDLE"
+trap - EXIT
+# mktemp creates 0700; the GUI runs as ark and has to be able to walk into it.
+chmod 0755 "$BUNDLE"
+rm -rf "$BUNDLE.old"
 
 echo "== installing launcher =="
 install -m 0755 "$SCRIPTS/psvita-launch.sh" /usr/local/bin/psvita-launch.sh
