@@ -245,13 +245,20 @@ fi
 ARGS=(-F)
 if [ -n "$ROM" ]; then
     if [ -e "$ROM" ]; then
-        # An extracted NoNpDrm folder is named after the title. main.cpp only
-        # auto-boots a directory install when install_contents() returns exactly
-        # 1, and an app+patch folder returns 2, so the first launch installs and
-        # then sits in the GUI. Once it is installed, boot it by title instead.
+        # Boot an already-installed title directly instead of re-installing it.
+        # Re-installing a .zip on every launch re-extracts ~1800 small files onto
+        # the exFAT /roms partition; that write storm hard-locked the MMC/exFAT
+        # path on this device (2026-11-12) and a power cut mid-extract leaves the
+        # app half-written. A directory is named after its title; a .zip/.vpk
+        # carries the TITLEID in parentheses or brackets, e.g. "Game (PCSE00328)".
         TITLE=$(basename "$ROM")
-        if [ -d "$ROM" ] && [ -d "$DATA/fs/ux0/app/$TITLE" ]; then
-            ARGS+=(-r "$TITLE")
+        if [ -d "$ROM" ]; then
+            TID=$TITLE
+        else
+            TID=$(printf '%s' "$TITLE" | sed -n 's/.*[([]\([A-Z0-9]\{9\}\)[])].*/\1/p')
+        fi
+        if [ -n "$TID" ] && [ -d "$DATA/fs/ux0/app/$TID" ] && [ -f "$DATA/fs/ux0/app/$TID/eboot.bin" ]; then
+            ARGS+=(-r "$TID")
         else
             # The "--" is required: Vita3K's CLI11 treats a leading "/" as a
             # Windows-style option, so a bare /roms/... path is swallowed and
