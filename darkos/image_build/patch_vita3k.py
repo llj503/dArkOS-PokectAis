@@ -31,6 +31,14 @@ Four upstream defects plus one pocketAis feature:
    displays it over the game, and Qt's own button focus works with the arrow
    keys + Enter/Esc that the handheld's uinput pad mapper already emits.
 
+6. ``vita3k/gui-qt/src/apps_list_table.cpp`` (plus a few headers): the desktop
+   GUI sets ``Qt::NoFocus`` on the app list and the settings category lists,
+   so a gamepad's arrow keys cannot select anything -- the only way to drive
+   it was a pointer, which is painful on a 3.5" handheld. Give those widgets
+   ``Qt::StrongFocus``, enlarge the icons and the selected-row highlight, and
+   focus the app list on startup / after a game closes. ``Enter`` already
+   boots the selected row (``AppsListTable::keyPressEvent``).
+
 Usage: patch_vita3k.py <vita3k-source-root>
 Idempotent: safe to run twice.
 """
@@ -224,6 +232,89 @@ def patch_in_game_menu(root: Path) -> None:
     print(f"patched {p} (in-game pause menu)")
 
 
+HANDHELD_MARKER = "// pocketAis: handheld keyboard navigation"
+
+HANDHELD_APPS_LIST = HANDHELD_MARKER + """
+    // A gamepad is the only input on the handheld: let the list take keyboard
+    // focus so d-pad/stick moves the selection and Enter boots the title.
+    setFocusPolicy(Qt::StrongFocus);
+    setStyleSheet(QStringLiteral(
+        "QTableView { font-size: 18px; outline: 0; }"
+        "QTableView::item:selected { background: #2d7ff9; color: white; }"));
+    QTimer::singleShot(0, this, [this] { setFocus(); });"""
+
+
+def patch_handheld_gui(root: Path) -> None:
+    """Make the Qt GUI navigable with d-pad + A/B instead of a mouse."""
+    qt = root / "vita3k" / "gui-qt"
+
+    p = qt / "src" / "apps_list_table.cpp"
+    t = p.read_text(encoding="utf-8")
+    if HANDHELD_MARKER not in t:
+        old = "    setFocusPolicy(Qt::NoFocus);"
+        if old not in t:
+            print(f"WARNING: app list focus line not found in {p}")
+        else:
+            t = t.replace(old, "    " + HANDHELD_APPS_LIST, 1)
+            p.write_text(t, encoding="utf-8")
+            print(f"patched {p} (app list keyboard focus + highlight)")
+    else:
+        print("apps_list_table.cpp handheld navigation already patched")
+
+    p = qt / "include" / "gui-qt" / "apps_list_table.h"
+    t = p.read_text(encoding="utf-8")
+    if "pocketAis: larger handheld icons" not in t:
+        old = "    QSize m_icon_size{ 75, 75 };"
+        if old in t:
+            t = t.replace(old, "    // pocketAis: larger handheld icons\n    QSize m_icon_size{ 96, 96 };", 1)
+            p.write_text(t, encoding="utf-8")
+            print(f"patched {p} (larger icons)")
+        else:
+            print(f"WARNING: icon size line not found in {p}")
+
+    for rel, old, new in [
+        ("src/controls_dialog.cpp",
+         "m_ui->settingsCategory->setFocusPolicy(Qt::NoFocus);",
+         "m_ui->settingsCategory->setFocusPolicy(Qt::StrongFocus); // pocketAis: pad navigation"),
+        ("src/settings_dialog.cpp",
+         "m_ui->modules_list->setFocusPolicy(Qt::NoFocus);",
+         "m_ui->modules_list->setFocusPolicy(Qt::StrongFocus); // pocketAis: pad navigation"),
+        ("src/settings_dialog.cpp",
+         "m_ui->tracy_modules_list->setFocusPolicy(Qt::NoFocus);",
+         "m_ui->tracy_modules_list->setFocusPolicy(Qt::StrongFocus); // pocketAis: pad navigation"),
+    ]:
+        p = qt / rel
+        t = p.read_text(encoding="utf-8")
+        if new in t:
+            continue
+        if old not in t:
+            print(f"WARNING: focus line not found in {p}")
+            continue
+        p.write_text(t.replace(old, new, 1), encoding="utf-8")
+        print(f"patched {p} (focus)")
+
+    p = qt / "src" / "main_window.cpp"
+    t = p.read_text(encoding="utf-8")
+    old = """    if (!m_is_app_closing) {
+        raise();
+        activateWindow();
+    }"""
+    new = """    if (!m_is_app_closing) {
+        raise();
+        activateWindow();
+        // pocketAis: hand keyboard focus back to the app list
+        if (m_apps_list_widget)
+            m_apps_list_widget->setFocus();
+    }"""
+    if "// pocketAis: hand keyboard focus back" in t:
+        pass
+    elif old not in t:
+        print(f"WARNING: raise block not found in {p}")
+    else:
+        p.write_text(t.replace(old, new, 1), encoding="utf-8")
+        print(f"patched {p} (focus restore after game closes)")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -235,6 +326,7 @@ def main() -> None:
     patch_surface_cache(root)
     patch_cli_autoboot(root)
     patch_in_game_menu(root)
+    patch_handheld_gui(root)
 
 
 if __name__ == "__main__":
