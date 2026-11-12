@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make the Vita3K-Plus v1.4-Corrected tag build against its own pinned submodules.
 
-Four defects in the tag (the tag is out of sync with what the author built):
+Four upstream defects plus one pocketAis feature:
 
 1. ``vita3k/util/include/util/fork_build.h`` is a generated header that was never
    committed, but ``vita3k/util/src/logging.cpp`` includes it.  Recreate it.
@@ -23,6 +23,13 @@ Four defects in the tag (the tag is out of sync with what the author built):
 4. ``vita3k/main.cpp`` records the title to auto-boot after a CLI install on its
    own local ``Config``, which app::init() has already moved into EmuEnvState.
    MainWindow reads ``emuenv.cfg``, so the game never starts.  Write to that one.
+
+5. ``vita3k/gui-qt/src/main_window.cpp``: on the desktop build the PS button
+   only shows a static "Emulation Paused / Press PS to continue" overlay, there
+   is no in-game menu. Replace ``on_ps_button()`` with a modal QMessageBox
+   (Resume / Exit to app list). It is a Qt toplevel so Weston's kiosk shell
+   displays it over the game, and Qt's own button focus works with the arrow
+   keys + Enter/Esc that the handheld's uinput pad mapper already emits.
 
 Usage: patch_vita3k.py <vita3k-source-root>
 Idempotent: safe to run twice.
@@ -161,6 +168,57 @@ def patch_cli_autoboot(root: Path) -> None:
     print(f"patched {p} (auto-boot writes emuenv.cfg)")
 
 
+PAUSE_MENU_MARKER = "// pocketAis: in-game pause menu"
+
+PAUSE_MENU_BODY = PAUSE_MENU_MARKER + """
+    if (!m_game_window)
+        return;
+
+    // QTimer-driven pump_sdl_events() can re-enter while the modal dialog runs.
+    static bool menu_open = false;
+    if (menu_open)
+        return;
+    menu_open = true;
+
+    m_app_session.set_pause_reason(app::AppSessionPauseReason::User, true);
+    refresh_emulation_actions();
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Vita3K"));
+    box.setText(tr("Game paused"));
+    auto *resume_button = box.addButton(tr("Resume"), QMessageBox::AcceptRole);
+    auto *exit_button = box.addButton(tr("Exit to app list"), QMessageBox::DestructiveRole);
+    box.setDefaultButton(resume_button);
+    box.exec();
+
+    menu_open = false;
+    if (box.clickedButton() == exit_button) {
+        on_stop_triggered();
+        return;
+    }
+
+    // Escape / B / a second PS press all fall through to Resume.
+    m_app_session.set_pause_reason(app::AppSessionPauseReason::User, false);
+    refresh_emulation_actions();
+}"""
+
+
+def patch_in_game_menu(root: Path) -> None:
+    """Give the PS button a real in-game menu instead of a static pause card."""
+    p = root / "vita3k" / "gui-qt" / "src" / "main_window.cpp"
+    t = p.read_text(encoding="utf-8")
+    if PAUSE_MENU_MARKER in t:
+        print("main_window.cpp in-game menu already patched")
+        return
+    old = "void MainWindow::on_ps_button() {\n    on_pause_triggered();\n}"
+    if old not in t:
+        print(f"WARNING: expected on_ps_button() not found in {p}")
+        return
+    t = t.replace(old, "void MainWindow::on_ps_button() {\n" + PAUSE_MENU_BODY, 1)
+    p.write_text(t, encoding="utf-8")
+    print(f"patched {p} (in-game pause menu)")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -171,6 +229,7 @@ def main() -> None:
     patch_atrac9(root)
     patch_surface_cache(root)
     patch_cli_autoboot(root)
+    patch_in_game_menu(root)
 
 
 if __name__ == "__main__":
