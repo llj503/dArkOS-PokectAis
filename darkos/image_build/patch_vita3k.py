@@ -24,15 +24,10 @@ Four upstream defects plus one pocketAis feature:
    own local ``Config``, which app::init() has already moved into EmuEnvState.
    MainWindow reads ``emuenv.cfg``, so the game never starts.  Write to that one.
 
-5. ``vita3k/gui-qt/src/main_window.cpp``: the PS button only showed a static
-   "Emulation Paused" overlay. Replace ``on_ps_button()`` with a parentless
-   ``QInputDialog`` combo box: one screen holding the same options as the ES
-   cards (system language, resolution scale, guest cores), plus Resume and
-   Exit to app list. It is a Qt toplevel so kiosk-shell stacks it over the game,
-   and the combo box works with d-pad + A/B (Enter/Escape). Selected settings
-   are written to ``emuenv.cfg`` and serialized immediately; they take effect
-   on the next game boot. Exit is deferred with QTimer to avoid the Qt crash
-   caused by deleting the game window inside a nested dialog loop.
+5. ``vita3k/gui-qt/src/main_window.cpp``: disable Vita3K's own PS/Home menu.
+   The handheld uses an external SDL2 OSD overlay (hotkey type from
+   ``console-detect -t``) for in-game settings; if Vita3K also reacted to the
+   PS button, both menus would appear. ``on_ps_button()`` becomes a no-op.
 
 6. ``vita3k/gui-qt/src/apps_list_table.cpp`` (plus a few headers): the desktop
    GUI sets ``Qt::NoFocus`` on the app list and the settings category lists,
@@ -179,87 +174,29 @@ def patch_cli_autoboot(root: Path) -> None:
     print(f"patched {p} (auto-boot writes emuenv.cfg)")
 
 
-PAUSE_MENU_MARKER = "// pocketAis: in-game pause menu"
+PAUSE_MENU_MARKER = "// pocketAis: PS/Home menu disabled (SDL2 OSD owns it)"
 
 PAUSE_MENU_BODY = PAUSE_MENU_MARKER + """
-    if (!m_game_window)
-        return;
-
-    // QTimer-driven pump_sdl_events() can re-enter while the modal dialog runs.
-    static bool menu_open = false;
-    if (menu_open)
-        return;
-    menu_open = true;
-
-    m_app_session.set_pause_reason(app::AppSessionPauseReason::User, true);
-    refresh_emulation_actions();
-
-    // One screen for the settings that used to be separate ES cards.
-    // Parentless: with MainWindow as parent Qt embeds the dialog behind the
-    // fullscreen game window under kiosk-shell.
-    QStringList items;
-    items << tr("继续游戏 / Resume")
-          << tr("系统语言：简体中文")
-          << tr("系统语言：English")
-          << tr("画面倍率：1x 流畅")
-          << tr("画面倍率：2x 清晰")
-          << tr("性能：省电 2 核")
-          << tr("性能：平衡 3 核")
-          << tr("退出到应用列表");
-
-    // getItem(nullptr, ...) creates a standalone Wayland toplevel; a dialog
-    // parented to MainWindow is hidden behind the fullscreen game window.
-    bool accepted = false;
-    const QString choice_text = QInputDialog::getItem(
-        nullptr, tr("Vita3K 快捷设置"),
-        tr("方向键选择，A 确认，B 返回（设置下次启动游戏生效）"),
-        items, 0, false, &accepted);
-    const int choice = accepted ? items.indexOf(choice_text) : -1;
-    menu_open = false;
-
-    switch (choice) {
-    case 1: emuenv.cfg.sys_lang = 11; break;              // Chinese (Simplified)
-    case 2: emuenv.cfg.sys_lang = 1; break;               // English (US)
-    case 3: emuenv.cfg.resolution_multiplier = 1.0f; break;
-    case 4: emuenv.cfg.resolution_multiplier = 2.0f; break;
-    case 5: emuenv.cfg.guest_cores = 2; break;
-    case 6: emuenv.cfg.guest_cores = 3; break;
-    case 7:
-        // Deferred: deleting the game window from inside a nested dialog loop
-        // crashed Qt with the old Exit-to-app-list button.
-        QTimer::singleShot(0, this, [this] { on_stop_triggered(); });
-        return;
-    default: break;
-    }
-    if (choice >= 1 && choice <= 6)
-        config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
-
-    // Resume (also covers Escape / B / a second PS press).
-    m_app_session.set_pause_reason(app::AppSessionPauseReason::User, false);
-    refresh_emulation_actions();
+    // The Home/PS button is claimed by the external SDL2 OSD overlay (hotkey
+    // type comes from `console-detect -t`). Vita3K must not pause the game or
+    // open a Qt dialog for it, otherwise both menus appear at once.
 }"""
 
 
 def patch_in_game_menu(root: Path) -> None:
-    """Give the PS button a real in-game menu instead of a static pause card."""
+    """Disable Vita3K's own PS/Home menu; the SDL2 OSD overlay owns the key."""
     p = root / "vita3k" / "gui-qt" / "src" / "main_window.cpp"
     t = p.read_text(encoding="utf-8")
     if PAUSE_MENU_MARKER in t:
-        print("main_window.cpp in-game menu already patched")
+        print("main_window.cpp PS/Home menu already disabled")
         return
     old = "void MainWindow::on_ps_button() {\n    on_pause_triggered();\n}"
     if old not in t:
         print(f"WARNING: expected on_ps_button() not found in {p}")
         return
-    if "#include <QInputDialog>" not in t:
-        t = t.replace("#include <QMessageBox>",
-                      "#include <QMessageBox>\n#include <QInputDialog>", 1)
-    if "#include <QTimer>" not in t:
-        t = t.replace("#include <QStandardPaths>",
-                      "#include <QStandardPaths>\n#include <QTimer>", 1)
     t = t.replace(old, "void MainWindow::on_ps_button() {\n" + PAUSE_MENU_BODY, 1)
     p.write_text(t, encoding="utf-8")
-    print(f"patched {p} (in-game quick settings menu)")
+    print(f"patched {p} (PS/Home menu disabled for OSD)")
 
 
 HANDHELD_MARKER = "// pocketAis: handheld keyboard navigation"
