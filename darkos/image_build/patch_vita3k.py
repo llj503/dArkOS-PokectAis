@@ -24,12 +24,15 @@ Four upstream defects plus one pocketAis feature:
    own local ``Config``, which app::init() has already moved into EmuEnvState.
    MainWindow reads ``emuenv.cfg``, so the game never starts.  Write to that one.
 
-5. ``vita3k/gui-qt/src/main_window.cpp``: on the desktop build the PS button
-   only shows a static "Emulation Paused / Press PS to continue" overlay, there
-   is no in-game menu. Replace ``on_ps_button()`` with a modal QMessageBox
-   (Resume / Exit to app list). It is a Qt toplevel so Weston's kiosk shell
-   displays it over the game, and Qt's own button focus works with the arrow
-   keys + Enter/Esc that the handheld's uinput pad mapper already emits.
+5. ``vita3k/gui-qt/src/main_window.cpp``: the PS button only showed a static
+   "Emulation Paused" overlay. Replace ``on_ps_button()`` with a parentless
+   ``QInputDialog`` combo box: one screen holding the same options as the ES
+   cards (system language, resolution scale, guest cores), plus Resume and
+   Exit to app list. It is a Qt toplevel so kiosk-shell stacks it over the game,
+   and the combo box works with d-pad + A/B (Enter/Escape). Selected settings
+   are written to ``emuenv.cfg`` and serialized immediately; they take effect
+   on the next game boot. Exit is deferred with QTimer to avoid the Qt crash
+   caused by deleting the game window inside a nested dialog loop.
 
 6. ``vita3k/gui-qt/src/apps_list_table.cpp`` (plus a few headers): the desktop
    GUI sets ``Qt::NoFocus`` on the app list and the settings category lists,
@@ -191,26 +194,50 @@ PAUSE_MENU_BODY = PAUSE_MENU_MARKER + """
     m_app_session.set_pause_reason(app::AppSessionPauseReason::User, true);
     refresh_emulation_actions();
 
-    // No parent: with MainWindow as parent Qt embeds the dialog inside the
-    // main window, which the fullscreen game window covers under kiosk-shell.
-    // A parentless dialog gets its own Wayland toplevel, stacked on top.
-    QMessageBox box;
-    box.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
-    box.setWindowModality(Qt::ApplicationModal);
-    box.setWindowTitle(tr("Vita3K"));
-    box.setText(tr("Game paused"));
-    auto *resume_button = box.addButton(tr("Resume"), QMessageBox::AcceptRole);
-    auto *exit_button = box.addButton(tr("Exit to app list"), QMessageBox::DestructiveRole);
-    box.setDefaultButton(resume_button);
-    box.exec();
+    // One screen for the settings that used to be separate ES cards.
+    // Parentless: with MainWindow as parent Qt embeds the dialog behind the
+    // fullscreen game window under kiosk-shell.
+    QStringList items;
+    items << tr("继续游戏 / Resume")
+          << tr("系统语言：简体中文")
+          << tr("系统语言：English")
+          << tr("画面倍率：1x 流畅")
+          << tr("画面倍率：2x 清晰")
+          << tr("性能：省电 2 核")
+          << tr("性能：平衡 3 核")
+          << tr("退出到应用列表");
 
+    QInputDialog dlg;
+    dlg.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+    dlg.setWindowModality(Qt::ApplicationModal);
+    dlg.setWindowTitle(tr("Vita3K 快捷设置"));
+    dlg.setLabelText(tr("方向键选择，A 确认，B 返回（设置下次启动游戏生效）"));
+    dlg.setInputMode(QInputDialog::ComboBox);
+    dlg.setComboBoxItems(items);
+    dlg.setTextValue(items.first());
+    dlg.setStyleSheet(QStringLiteral("font-size: 18px;"));
+    const bool accepted = (dlg.exec() == QDialog::Accepted);
+    const int choice = accepted ? items.indexOf(dlg.textValue()) : -1;
     menu_open = false;
-    if (box.clickedButton() == exit_button) {
-        on_stop_triggered();
-        return;
-    }
 
-    // Escape / B / a second PS press all fall through to Resume.
+    switch (choice) {
+    case 1: emuenv.cfg.sys_lang = 11; break;              // Chinese (Simplified)
+    case 2: emuenv.cfg.sys_lang = 1; break;               // English (US)
+    case 3: emuenv.cfg.resolution_multiplier = 1.0f; break;
+    case 4: emuenv.cfg.resolution_multiplier = 2.0f; break;
+    case 5: emuenv.cfg.guest_cores = 2; break;
+    case 6: emuenv.cfg.guest_cores = 3; break;
+    case 7:
+        // Deferred: deleting the game window from inside a nested dialog loop
+        // crashed Qt with the old Exit-to-app-list button.
+        QTimer::singleShot(0, this, [this] { on_stop_triggered(); });
+        return;
+    default: break;
+    }
+    if (choice >= 1 && choice <= 6)
+        config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
+
+    // Resume (also covers Escape / B / a second PS press).
     m_app_session.set_pause_reason(app::AppSessionPauseReason::User, false);
     refresh_emulation_actions();
 }"""
@@ -227,9 +254,15 @@ def patch_in_game_menu(root: Path) -> None:
     if old not in t:
         print(f"WARNING: expected on_ps_button() not found in {p}")
         return
+    if "#include <QInputDialog>" not in t:
+        t = t.replace("#include <QMessageBox>",
+                      "#include <QMessageBox>\n#include <QInputDialog>", 1)
+    if "#include <QTimer>" not in t:
+        t = t.replace("#include <QStandardPaths>",
+                      "#include <QStandardPaths>\n#include <QTimer>", 1)
     t = t.replace(old, "void MainWindow::on_ps_button() {\n" + PAUSE_MENU_BODY, 1)
     p.write_text(t, encoding="utf-8")
-    print(f"patched {p} (in-game pause menu)")
+    print(f"patched {p} (in-game quick settings menu)")
 
 
 HANDHELD_MARKER = "// pocketAis: handheld keyboard navigation"
