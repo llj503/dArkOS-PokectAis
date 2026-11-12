@@ -4,3 +4,12 @@
 *.ps1 text eol=crlf
 *.dts text
 *.md text
+*.c text eol=lf
+*.h text eol=lf
+*.xml text eol=lf
+*.out text eol=lf
+*.cfg text eol=lf
+*.yml text eol=lf
+console-detect text eol=lf
+*.png binary
+*.zst binary
