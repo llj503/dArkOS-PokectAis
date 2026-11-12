@@ -241,7 +241,19 @@ HANDHELD_APPS_LIST = HANDHELD_MARKER + """
     setStyleSheet(QStringLiteral(
         "QTableView { font-size: 18px; outline: 0; }"
         "QTableView::item:selected { background: #2d7ff9; color: white; }"));
-    QTimer::singleShot(0, this, [this] { setFocus(); });"""
+    // The icon delegate paints the row background itself, so drive the
+    // highlight through the palette as well as the stylesheet.
+    QPalette handheld_pal = palette();
+    handheld_pal.setColor(QPalette::Highlight, QColor(45, 127, 249));
+    handheld_pal.setColor(QPalette::HighlightedText, QColor(Qt::white));
+    setPalette(handheld_pal);
+    QTimer::singleShot(0, this, [this] {
+        setFocus();
+        // With only one installed title a d-pad press cannot visibly move the
+        // selection, so preselect the first row on startup.
+        if (rowCount() > 0 && selectionModel() && !selectionModel()->hasSelection())
+            selectRow(currentRow() >= 0 ? currentRow() : 0);
+    });"""
 
 
 def patch_handheld_gui(root: Path) -> None:
