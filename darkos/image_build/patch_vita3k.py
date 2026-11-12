@@ -207,17 +207,14 @@ PAUSE_MENU_BODY = PAUSE_MENU_MARKER + """
           << tr("性能：平衡 3 核")
           << tr("退出到应用列表");
 
-    QInputDialog dlg;
-    dlg.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
-    dlg.setWindowModality(Qt::ApplicationModal);
-    dlg.setWindowTitle(tr("Vita3K 快捷设置"));
-    dlg.setLabelText(tr("方向键选择，A 确认，B 返回（设置下次启动游戏生效）"));
-    dlg.setInputMode(QInputDialog::ComboBox);
-    dlg.setComboBoxItems(items);
-    dlg.setTextValue(items.first());
-    dlg.setStyleSheet(QStringLiteral("font-size: 18px;"));
-    const bool accepted = (dlg.exec() == QDialog::Accepted);
-    const int choice = accepted ? items.indexOf(dlg.textValue()) : -1;
+    // getItem(nullptr, ...) creates a standalone Wayland toplevel; a dialog
+    // parented to MainWindow is hidden behind the fullscreen game window.
+    bool accepted = false;
+    const QString choice_text = QInputDialog::getItem(
+        nullptr, tr("Vita3K 快捷设置"),
+        tr("方向键选择，A 确认，B 返回（设置下次启动游戏生效）"),
+        items, 0, false, &accepted);
+    const int choice = accepted ? items.indexOf(choice_text) : -1;
     menu_open = false;
 
     switch (choice) {
