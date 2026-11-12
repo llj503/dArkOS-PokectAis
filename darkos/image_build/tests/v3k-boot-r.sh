@@ -3,7 +3,7 @@
 # layer lets Vita3K's Vulkan renderer present under Weston.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 OUT=/home/ark/vita3k-install
-RT=/run/user/1000
+RT=/run/vita3k
 SOCK=wayland-vita3k
 TITLE=PCSE00328
 

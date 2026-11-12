@@ -1,0 +1,21 @@
+[22:36:04] launching game
+[22:36:08] Vita3K pid 319754
+[22:36:23] shot menu-before.png
+[22:36:23] scene before: ["View 0 (role xdg_toplevel, PID 319754, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 30 FPS (34 ms) | 960x544 | Bilinear' of Vita3K, 0x55710fa690):", "View 0 (role xdg_toplevel, PID 319754, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55712162c0):"]
+[22:36:23] == press PS (P) ==
+[22:36:23] sent p
+[22:36:26] shot menu-open.png
+[22:36:26] scene menu-open: ["View 0 (role xdg_toplevel, PID 319754, surface ID 44, top-level window 'Vita3K' of Vita3K, 0x557128c430):", "View 0 (role xdg_toplevel, PID 319754, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 5 FPS (202 ms) | 960x544 | Bilinear' of Vita3K, 0x55710fa690):", "View 1 (role xdg_toplevel, PID 319754, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55712162c0):"]
+[22:36:26] DIALOG_VISIBLE_IN_SCENE_GRAPH= True
+[22:36:26] == Enter (Resume) ==
+[22:36:26] sent enter
+[22:36:28] scene resumed: ["View 0 (role xdg_toplevel, PID 319754, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 31 FPS (33 ms) | 960x544 | Bilinear' of Vita3K, 0x55710fa690):", "View 0 (role xdg_toplevel, PID 319754, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55712162c0):"]
+[22:36:28] == PS again, Right, Enter (Exit to app list) ==
+[22:36:28] sent p
+[22:36:29] sent right
+[22:36:29] sent enter
+[22:36:34] shot FAILED menu-after-exit.png
+[22:36:34] scene after-exit: (none)
+[22:36:34] GAME_WINDOW_GONE= True
+[22:36:34] MENU_VERIFY_DONE
+[22:36:36] post: ES active session inactive

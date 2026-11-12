@@ -15,9 +15,17 @@
 set -u
 
 ROM="${1:-}"
+
+# ES "option cards": plain .sh entries in /roms/psvita are settings, not Vita3K
+# content. Run them directly in ES's own process instead of starting Weston.
+# Game zip/vpk and the empty-ROM GUI still go through the systemd session below.
+case "$ROM" in
+    *.sh|*.SH) exec bash "$ROM" ;;
+esac
+
 BUNDLE=/opt/vita3k
 DATA=/roms/vita3k
-RTDIR=/run/user/1000
+RTDIR=/run/vita3k
 SOCK=wayland-vita3k
 
 # systemd kills every process in the ES cgroup when the service stops, this
@@ -95,6 +103,11 @@ cleanup() {
         kill -9 "$WESTON_PID" 2>/dev/null
     fi
     rm -f "$RTDIR/$SOCK" "$RTDIR/$SOCK.lock"
+    # Settings chosen in the in-game OSD are applied only now: Vita3K rewrites
+    # config.yml on exit, so writing it while the game runs would be lost.
+    if [ -f "$DATA/.osd-pending" ]; then
+        python3 /usr/local/bin/psvita-option.py --apply-pending >/dev/null 2>&1 || true
+    fi
     restore_governors
     systemctl restart killer_daemon.service >/dev/null 2>&1 || true
     systemctl restart ogage.service >/dev/null 2>&1 || true
@@ -106,6 +119,26 @@ systemctl stop emulationstation
 # Let ES drop DRM master before Weston asks for it.
 sleep 2
 set_governors
+
+# Follow the ES language, same detection as dArkOS4RK3562's flycast/ps2
+# launchers (es_settings.cfg <string name="Language" value="zh-CN" />).
+# Vita3K's equivalent is config.yml sys-lang: 11 (简体中文) / 1 (English US).
+# An explicit choice from the OSD or an ES option card wins.
+python3 /usr/local/bin/psvita-lang.py --sync >/dev/null 2>&1 || true
+
+# Do not use logind's /run/user/1000: it is a per-session tmpfs that exists
+# only while an ark login session is alive (an SSH debugging session creates
+# it, and it disappears when that session ends). ES starts this launcher as
+# a root transient service with no ark session, so weston would abort with
+# "XDG_RUNTIME_DIR ... is not a directory" and the game would bounce straight
+# back to ES -- which looks exactly like a crash. Use our own runtime dir and
+# create it here, independent of any login session.
+if [ ! -d "$RTDIR" ]; then
+    echo "psvita: creating runtime dir $RTDIR" >&2
+    mkdir -p "$RTDIR" || { echo "psvita: cannot create $RTDIR" >&2; exit 1; }
+fi
+chown ark:ark "$RTDIR" 2>/dev/null || true
+chmod 0700 "$RTDIR" 2>/dev/null || true
 
 export XDG_RUNTIME_DIR="$RTDIR"
 # PSVITA_WESTON_DEBUG=1 adds --debug, which is what authorises the

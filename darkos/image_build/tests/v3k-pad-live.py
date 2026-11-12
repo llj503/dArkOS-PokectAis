@@ -16,7 +16,7 @@ import time
 import evdev
 
 OUT = "/home/ark/vita3k-install"
-RT = "/run/user/1000"
+RT = "/run/vita3k"
 SOCK = "wayland-vita3k"
 BTN = {"a": 304, "b": 305, "x": 307, "y": 308, "l1": 310, "r1": 311,
        "select": 314, "start": 315, "up": 544, "down": 545,

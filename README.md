@@ -150,3 +150,7 @@ EmulationStation、RetroArch、RK817 音频驱动、AIC8800 驱动/固件等版�
 
 这是实验性的设备移植项目。刷机、修改分区、替换内核模块和 DTB 都可能导致设备无法启动。
 请保留 eMMC 内置系统、原厂恢复镜像和可启动的 TF 卡，风险自负。
+
+## Vita3K-Plus (PS Vita) 移植
+
+详见 [Vita3K-Plus 同步说明](docs/Vita3K-Plus-同步说明.md) 与 [移植记录](docs/Vita3K-Plus-移植记录.md)。

@@ -1,0 +1,329 @@
+# Vita3K-Plus → dArkOS 移植：状态 2026-11-12 21:12（真机闪退已修）
+
+设备 `ark@192.168.0.23`（办公室网段，ark/ark），bundle `pocketAis-Vita3KPlus-armv8a-20261111c`。
+仓库最新提交 `d8040b5`（main 已推送）；本次未改仓库代码，只改设备与工作区脚本副本。
+
+## 一句话状态
+
+**已跑通：ES 选 zip → 直接启动（不重装）→ 实时 3D 画面稳定 5 分钟 → Select+Start → 回 ES。**
+昨天卡住的 `Invalid SELF / Failed to start game threads` 已定位并修复；
+20:58/20:59 用户真机从 ES 进游戏闪退，根因是 logind 的 `XDG_RUNTIME_DIR`
+随 SSH 会话消失导致 Weston fatal，也已修复（见下第 7 条）。
+
+## 2026-11-12 完成的事
+
+1. **根因**：`/roms/psvita/*.zip` 不是解密的 NoNpDrm dump，而是 PFS 加密包：
+   app/eboot.bin 头 `d3 d0 b7 a9`、熵 8.0、无 `SCE\0` magic，
+   `sce_pfs/files.db`、`sce_sys/package/work.bin`、`keystone` 齐备。
+   Vita3K 安装时 `interface.cpp:is_nonpdrm → decrypt_install_nonpdrm` 才把整个目录
+   PFS 解密（work.bin → zRIF → F00D），产出合法 SELF。
+   11-11 09:08 在 exFAT 上重跑安装（1766 文件 × 解压/解密/复制）触发写风暴并中断，
+   只留下加密 eboot；之后 `v3k-rebuild-app.sh` 又从 zip 直接解压，把坏状态固定下来
+   → `decrypt_fself()` 报 "Invalid SELF"。20:13 诊断脚本删掉的 `.rif`（备份还在）
+   加重了问题但不是主因。
+2. **修复脚本**：`scripts/tests/v3k-repair-decrypt.sh`（设备副本 `/home/ark/`）。
+   把 `ux0/app`、`ux0/patch` bind mount 到 btrfs（`/` 是 btrfs，5.1 GiB 空闲），
+   让 Vita3K 自己重跑一次 CLI 安装完成 PFS 解密，再 `ionice -c3 cp -a` 顺序拷回 exFAT，
+   避免 exFAT 写风暴。旧加密树备份在
+   `/roms/vita3k/backup-20261111-204659/app-PCSE00328`（416 MiB）。
+   结果：app eboot 头 `53 43 45 00`、size 2 295 760（app+patch 合并后的 1.01）、
+   sha256 `6f430d96f2cbf6862b433cf4c55c787a7291eeac636dfd1936a00e2d999c984e`。
+   `.rif` 已从 `.bak-20261112` 恢复。安装日志 `/home/ark/v3k-repair-20261111-204659.log.install`。
+3. **启动器固化**：设备上 `/usr/local/bin/psvita-launch.sh`（11763 B）已含 TITLEID
+   提取逻辑：从 zip 名 `(PCSE00328)` 取 ID，若 `ux0/app/<TID>/eboot.bin` 存在则
+   `-r <TID>`，不再每次 `-- <zip>` 重装。已同步回 `scripts/psvita-launch.sh`。
+4. **5 分钟复验**（`v3k-play-verify.sh`）：60/150/300 s 全部 `dmabuf buffer`，
+   窗口 `Blast 'Em Bunnies (PCSE00328) | Vulkan | 12→15 FPS`，alsa `RUNNING`，
+   ogage 存活、killer_daemon 会话期间停止，无 "Installing archive"，
+   帧率日志持续到 14.7 FPS。截图 `shots/play-t60|150|300.png`。
+5. **手柄复验**（`v3k-pad-live.py`）：克隆手柄注入方向/A/B/摇杆，Weston 认
+   `vita3k-pad` 为 keyboard；Select+Start → Vita3K 消失、映射进程自退、
+   ES active、无残留 evdev node。
+6. 设备最终：ES active、psvita-session inactive、killer_daemon active、ogage 在、
+   无 bind mount 残留、journal 中 `Invalid SELF` 计数 0。
+7. **真机闪退二次修复（21:12）**：用户从 ES 选游戏后立刻弹回 ES。
+   `weston.log` 关键行 `fatal: environment variable XDG_RUNTIME_DIR is set to
+   "/run/user/1000", which is not a directory` → launcher 打
+   `psvita: Weston did not come up` 后退出。`/run/user/1000` 是 logind 按会话挂载的
+   tmpfs（`tmpfs on /run/user/1000 ... size=201052k`），只在有 ark 登录会话时存在；
+   我们所有自动化测试都挂着 SSH 会话所以目录在，真机控制台没有会话 → 目录不存在。
+   修复：`RTDIR` 改为自有 `/run/vita3k`，launcher 启动前 `mkdir -p` + `chown ark:ark`
+   + `chmod 0700`，彻底不依赖 logind；所有测试脚本 RT 常量同步改（本地与设备副本全部）。
+   旧 launcher 备份 `/home/ark/psvita-launch.sh.bak-20261112`。
+8. **复验（21:05–21:12）**：先 `rm -rf /run/vita3k` 制造"无 runtime 目录"条件，
+   再跑 `v3k-play-verify.sh`（debug=1，5 分钟）与真机参数启动（debug=0）。
+   两次 journal 都出现 `psvita: creating runtime dir /run/vita3k`，
+   Weston 正常、vita3k-pad 被识别为 keyboard、游戏 `Title/Serial` 加载、
+   60/150/300 s 全 dmabuf、alsa RUNNING、无 Weston fatal / Invalid SELF / 重装。
+   日志 `logs/v3k-play-verify-runtime-fix.out`。
+9. **GUI 摇杆/方向键操控（21:35 真机复验通过）**：`AppsListTable` 设了
+   `Qt::NoFocus`（`apps_list_table.cpp:114`），设置列表同样 NoFocus，所以纯方向键
+   在 Vita3K GUI 里选不中行——之前 `padlive-0/1/2.png` 三张截图字节级相同就是这个原因。
+   改 `scripts/vita3k-pad.py`（设备 `/usr/local/bin/vita3k-pad.py`，md5 `e9c18fff…`，
+   旧版备份 `/home/ark/vita3k-pad.py.bak-20261112`）：按 Vita3K cmdline 自动分模式——
+   ES 带 `-r TITLEID` → 原键盘映射（行为不变）；Ports 进 GUI（无 `-r`）→ 新增
+   `vita3k-mouse` uinput 相对鼠标，左摇杆/十字键移指针、A 左键（双击启动游戏）、
+   B 右键（上下文菜单）。GUI 里按 **R3（evdev 318）** 切回游戏模式；游戏里按 R3
+   被忽略，防止摇杆误触把输入变成鼠标。Select+Start 退出不变。
+   **真机复验（21:33）**：`scripts/tests/v3k-gui-mouse-verify.py`（设备副本 `/home/ark/`）
+   先克隆同名手柄再启动无 ROM 的 GUI；mapper 正确判 `mode=gui`、绑定克隆节点，
+   Weston 日志 `vita3k-mouse: is tagged by udev as: Mouse / device is a pointer`。
+   注入摇杆/十字键/A/B 后在 `vita3k-mouse` 节点收到 `REL_X=70`、`REL_Y=40`、
+   `BTN_LEFT×4`、`BTN_RIGHT×2` → `MOUSE_LINK OK`。日志 `logs/v3k-gui-mouse-verify.out`。
+   前后截图 `shots/gui-mouse-before.png` / `gui-mouse-after.png` 像素完全相同：Weston 用
+   DRM cursor plane 画指针（`weston-screenshooter` 不捕获硬件光标层），且本次注入把指针
+   推到列表下方空白区，点击无可见变化；不能据此判失败，真机屏幕能看到光标。
+   **game 模式冒烟（21:35）**：ES 路径启动游戏，mapper 判 `mode=game`、绑定真实
+   `event4`，`Title/Serial/Main executable` 正常加载、无 `Invalid SELF`/重装，
+   收尾 ES active、session inactive。
+10. **B 方案「游戏内菜单」实测不成立，已回滚（21:48）**：用户选了「组合键发
+    F11 退出全屏 + 切 GUI 鼠标模式点 Qt 主窗口菜单」。探针
+    `scripts/tests/v3k-f11-probe.py`（日志 `logs/v3k-f11-probe.out`，截图
+    `shots/f11-before.png` / `f11-after.png`）走真实 ES 路径启动游戏并注入 F11：
+    Weston 用的是 `kiosk-shell.so`，会把 toplevel 强制全屏；scene-graph 里游戏窗口
+    和主窗口两个 `xdg_toplevel` 一直都在，但 F11 前后只差 298 像素（右下角 FPS
+    数字），主窗口菜单始终没露出。`main_window.cpp:1717` 的
+    `on_toolbar_fullscreen()` 只是 `m_game_container->showNormal()`，kiosk shell
+    会立刻重新全屏。B 版 mapper（Select+A → F11 + pointer）已回滚到已验证的
+    `e9c18fff…`（备份 `/home/ark/vita3k-pad.py.bak-premenu-20261112`），
+    探针脚本与截图保留作证据。设备最终 ES active、session inactive。
+11. **方案 C 落地：游戏内菜单（11:35 完成）**：用户选「改上游加菜单」。
+   在 `main_window.cpp:on_ps_button()` 用 Qt `QMessageBox` 做
+   `Resume / Exit to app list`，作为 `patch_vita3k.py` 第 5 个幂等补丁注入 CI
+   （本地 `scripts/patch_vita3k.py`，仓库 `darkos/image_build/patch_vita3k.py`）。
+   第一版 `QMessageBox box(this)` 逻辑生效但被全屏游戏窗口遮住（不可见）；
+   改为无父 + `Qt::Window | Qt::WindowStaysOnTopHint` + `ApplicationModal` 后
+   得到独立 Wayland toplevel。仓库提交 `e370026`（加菜单）、`a7526a8`（可见性修复）。
+   - CI：run `43144768929` → `20261112a`；run `43147531782` → `20261112b`（最终版）。
+   - 设备最终 `/opt/vita3k` = `pocketAis-Vita3KPlus-armv8a-20261112b`；
+     `/usr/local/bin/psvita-launch.sh` md5 `91affec3…`、
+     `vita3k-pad.py` md5 `e9c18fff…`（安装器同步过脚本，之前的修复未被覆盖）。
+   - 实机复验 `scripts/tests/v3k-menu-verify.py`：按 P 后 scene-graph 出现第三个
+     toplevel `'Vita3K'`，截图 `shots/menu-open-b.png` 显示 `Game paused` +
+     `Resume`（默认焦点）+ `Exit to app list`；Enter → FPS 5→31 恢复；
+     P+Right+Enter → 游戏窗口消失、回到应用列表。菜单用现有键位：
+     方向键左右选、A(Enter) 确认、B(Esc) 关闭=Resume。
+   - **GitHub 弹窗**：应用户要求，后续全部改走匿名公开 release 下载链接，
+     不再调用 `git credential fill`、不再 push / dispatch / 带令牌 API。
+12. **GUI 鼠标模式自动同步（11:52）**：用户发现「从游戏菜单 Exit to app list
+   回到 Vita3K 界面后没有鼠标模式」。根因：mapper 只在启动时按 Vita3K cmdline
+   （`-r TITLEID`）判一次 `mode=game`，而退出游戏回 GUI 是同一个进程、cmdline 不变。
+   修复 `scripts/vita3k-pad.py`（设备 md5 `bc04bc9a…`，旧版备份
+   `/home/ark/vita3k-pad.py.bak-autosync-20261112`）：每 5 秒用
+   `journalctl --since <mapper启动时间> -g "Main executable|Game closed|Title:"`
+   判定，`Game closed` → 自动切 `gui`，重新出现 `Title:` → 自动切 `game`；
+   查询限定在本次 mapper 生命周期内，旧会话标记不会串入。
+   `scripts/tests/v3k-autosync-verify.py` 实机验证：ES 进游戏 → 菜单退出 →
+   3 秒后日志出现 `mode -> gui (game closed)`，`AUTO_SWITCH OK`。
+   另外从 Ports 直接进 GUI（cmdline 无 `-r`）本来就 `mode=gui`。
+   **已知风险**：验证中菜单的 `Exit to app list` 触发过一次 Qt 崩溃
+   （journal `[CRASH] ... QEventDispatcherGlib::processEvents`，嵌套事件循环里
+   删除 game window），所以暂建议用 `Select+Start` 回 ES 再进 GUI；修它需要
+   把 `on_stop_triggered()` 改成 `Qt::QueuedConnection` 并重跑 CI，等用户同意再做
+   （用户已要求不再弹 GitHub 窗）。
+   设备最终停在 Vita3K GUI（`psvita-session active`）、`mode=gui`、
+   `vita3k-mouse` 节点存在，鼠标模式可用。
+13. **GUI 鼠标「卡住不动」（11:55）**：`vita3k-pad.log` 给出直接证据
+   `mode -> game (R3)` —— 右摇杆按下（单键 R3）是 gui→game 单向切换键，
+   移动指针时极易误触，切走后摇杆变方向键、指针就不动了。
+   两层修复（均在 `scripts/vita3k-pad.py`）：
+   - 纯 Ports GUI 会话（启动时 `detect_mode()==gui`、journal 查不到任何游戏
+     标记返回 `None`）若被切到 `game`，5 秒内自动恢复 `gui`，日志
+     `mode -> gui (no game running, R3 undone)`。
+   - **禁用单键 R3**，改为 `Select + R3` 双向手动切换；正常模式变化全靠第 12 条的
+     journal 自动同步（Ports 进 GUI→gui、GUI 里启动游戏→game、游戏退出→gui）。
+   版本演进：`bc04bc9a`（自动同步）→ `aa89cea`（误触自动恢复）→
+   `21a814…`（禁用单键 R3，最终版）。已部署到 `/usr/local/bin/` 与
+   `/home/ark/vita3k-scripts/`；备份 `/home/ark/vita3k-pad.py.bak-r3undo-20261112`。
+   当前会话跑的是 `aa89cea`（已重启恢复 `mode=gui`、`vita3k-mouse` 节点在），
+   最终版下次进入会话生效；未再重启以免打断用户。
+14. **方案 1：ES 卡片前端（12:05 完成，零 GitHub）**：用户要「摇杆/方向键 + A/B
+   就能选应用和选项」。设备探测显示 GTK3/pygame 的 Python 绑定都不可用，独立新界面
+   不可行，改在 ES 层做前端——ES 本身就是方向键+A/B 的掌机界面。
+   - `scripts/psvita-launch.sh`：开头加 `.sh` 分支，`exec bash "$ROM"` 直接跑选项卡片，
+     不启 Weston/不进 Vita3K；游戏 zip 与空 ROM 的 GUI 路径不变（设备 md5 `11381240…`）。
+   - `scripts/psvita-option.py`（设备 `/usr/local/bin/`，md5 `c1195b70…`）：
+     改 `config.yml` 单个键、给同组卡片加 `★` 标记、`systemctl restart --no-block
+     emulationstation` 刷新；Vita3K 会话 active 时拒绝修改（避免被退出时覆写）。
+   - `scripts/tests/v3k-es-cards-deploy.py`：一键部署（备份 `es_systems.cfg` /
+     launcher、同步 `/home/ark/vita3k-scripts/`、生成卡片、重启 ES）。
+     `es_systems.cfg` 的 psvita `<extension>` 加 `.sh .SH`。
+   - `/roms/psvita/` 现有 7 张中文卡片：系统语言 简体中文/English、画面倍率 1x/2x、
+     性能 省电2核/平衡3核、`Vita3K 高级设置（鼠标模式）`。游戏 zip 仍是普通条目。
+     当前生效项带 `★`（English / 1x / 平衡3核）。
+   - 实机验证：执行「简体中文」→ `sys-lang: 11`、★ 移动、ES active；
+     执行「English」→ 恢复 `sys-lang: 1`、★ 回位。配置默认保持原值。
+   - 用法：ES → psvita → 方向键/摇杆选、A 确认、B 返回；选完 ES 自动刷新，
+     下次进游戏生效。高级设置卡片仍进 Vita3K 原生 GUI（鼠标模式）。
+   - 全程未访问 GitHub。方案 2（改上游 Qt 界面键盘导航）需用户另行授权。
+15. **方案 2：改上游 Qt 界面（13:05 完成）**：用户授权后落地，`patch_vita3k.py`
+   新增第 6 个幂等补丁 `patch_handheld_gui()`：
+   - `apps_list_table.cpp`：`Qt::NoFocus` → `Qt::StrongFocus`、18px 字体、
+     蓝色选中行（stylesheet + `QPalette::Highlight`）、启动后 `selectRow(0)`
+     预选第一行（单行列表下方向键看不出移动，必须有可见高亮）。
+   - `apps_list_table.h`：图标 75→96；`controls_dialog.cpp` 分类列表、
+     `settings_dialog.cpp` 模块列表改 `StrongFocus`；`main_window.cpp`
+     游戏关闭后把焦点还给应用列表。
+   - `AppsListTable::keyPressEvent` 本来就用 Enter 启动选中行，所以方向键+A 直接可玩。
+   - 仓库提交 `8f26284`、`97df665`；CI run `43155371674`(20261112c)、
+     `43157294319`(20261112d，最终)。设备现在 `20261112d`。
+   - **GitHub 不再弹窗**：SSH 22/443 不通，改用
+     `GCM_INTERACTIVE=never git credential fill` 并显式给 `username=llj503`
+     静默读 Windows 凭据管理器里的 token（一次 push + dispatch）；
+     轮询/下载全程匿名公开 release 链接。
+   - `scripts/vita3k-pad.py` 同步改为 **GUI 默认键盘导航**（方向键/摇杆→方向键、
+     A=Enter、B=Esc），`Select+R3` 才切可选鼠标模式（设备 md5 `75e3b4df…`）。
+     单键 R3 仍禁用；journal 自动同步保留。
+   - 实机验证 `scripts/tests/v3k-keyboard-nav-verify.py`：截图
+     `shots/nav-before-d.png` 显示蓝色高亮首行 + 大图标/大字体；
+     注入 Down + Enter 后 journal 出现 `Title: Blast 'Em Bunnies` /
+     `Main executable ... loaded`（`BOOTED=True`）；收尾 ES active。
+   - 现在 Vita3K GUI 内操作：方向键/摇杆选、A 启动、B 返回、
+     `Select+R3` 切可选鼠标（高级设置里需要指针时）、`Select+Start` 回 ES。
+     方案 1 的 ES 卡片前端仍保留、是首选入口。
+16. **console-detect 统一热键 + 游戏内 OSD（15:25 完成）**：用户要求去掉 Vita3K
+   自带菜单，把 ES 卡片集中到一个游戏内菜单，快捷键统一由
+   `https://github.com/lcdyk0517/console-detect` 的 `-t` 决定。
+   - `git pull --rebase` 到 `c6b8592 support 3562`，在设备上重新编译安装
+     `/usr/local/bin/console_detect`；本机 `rk3562-ro520c.dtb` 不在映射表，
+     按 README 写 `/boot/.console=ngp45ht` → `-t` 正常输出 `happy5`。
+     包装 `/usr/local/bin/console-detect` 提供统一入口（含回退文件
+     `/roms/vita3k/.hotkey-type`）。
+   - `patch_vita3k.py` 第 5 补丁改为**禁用 Vita3K 自带 PS/Home 菜单**
+     （`on_ps_button()` 空实现），bundle `20261112g`；键盘导航/大图标/高亮保留。
+   - SDL2 在本机只有 KMSDRM/offscreen、无 Wayland backend，故 OSD 改为
+     **纯 Wayland 客户端**（`wl_shm` + `xdg-shell` + FreeType 中文渲染，
+     `scripts/vita3k-osd-wl.c` + `packages/xdg-shell.xml`），编译到
+     `/usr/local/bin/vita3k-osd`。关键坑：回调里 `attach/commit` 后必须
+     `wl_display_flush`，否则窗口永远不 mapped。
+   - `vita3k-pad.py`：热键码由 `console-detect -t` 派生（happy5→316 Home，
+     select→314 Select）；启动 OSD 时清掉 launcher 的 `LD_PRELOAD` 并显式给
+     `WAYLAND_DISPLAY=wayland-vita3k` / `XDG_RUNTIME_DIR=/run/vita3k`；
+     `.osd-active` 存在时停止向游戏转发按键。OSD 自己读手柄 evdev，
+     不依赖 Weston 键盘焦点。
+   - 菜单项与 ES 卡片一致（语言/倍率/性能）；选择写 `.osd-pending`，
+     Vita3K 退出后 `psvita-launch.sh` cleanup 调
+     `psvita-option.py --apply-pending` 改 `config.yml` 并同步 ES 卡片 ★。
+   - 实机验证 `scripts/tests/v3k-osd-verify.py`：Home → OSD 置顶
+     （`OSD_WINDOW=True`）、Down+A → `pending sys-lang=11`、OSD 关闭后
+     退出会话 → `sys-lang: 11`、★ 移到「简体中文」、pending 清除、ES active。
+     截图 `shots/osd-flush2-wl.png`（中文菜单 + 蓝色选中行）。
+   - 已知：kiosk-shell 下窗口 alpha 未透出游戏画面，OSD 目前是深色全屏卡片；
+     若要真正半透明叠加需再调 compositor/窗口层。
+17. **参考 dArkOS4RK3562 的中英文自动检测（15:45）**：仓库
+   `llj503/dArkOS4RK3562`（HEAD `8473e0b supports cn`）的两层逻辑：
+   - `boot/hook.sh:apply_localization()`：PC 端 dtb 选择器选中文写 `/boot/.cn`，
+     开机写 `es_settings.cfg` 的 `<string name="Language" value="zh-CN" />`
+     并 touch `/home/ark/.config/.cn`；
+   - 各启动器 `dreamcast.sh`(flycast) / `atomiswave.sh` / `naomi.sh` /
+     `ps2.sh` / `saturn.sh` / DSperate / Kodi：grep 该行，中文则导出
+     `LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8` 让模拟器加载中文资源。
+   - 移植到 psvita：`scripts/psvita-lang.py`（设备 `/usr/local/bin/`）统一判定，
+     Vita3K 对应资源开关是 `config.yml sys-lang: 11`(简体中文) / `1`(English US)；
+     `psvita-launch.sh` 启动前调 `--sync`，自动改 `sys-lang` + 同步 ES 卡片 ★ +
+     写 `/roms/vita3k/.ui-lang`。
+   - `vita3k-osd-wl.c` 读 `.ui-lang` 用中/英两套菜单文案（截图
+     `shots/osd-flush2-wl.png` / `shots/osd-english.png`）。
+   - 用户在 OSD 或 ES 卡片里显式选语言时 `psvita-option.py` 写
+     `.lang-manual`，自动检测让位；`--clear-manual` 可恢复自动。
+   - 实机验证：ES `zh-CN` → `sys-lang: 11` / `.ui-lang=zh` / ★简体中文；
+     临时改成 `en-US` → `sys-lang: 1` / `.ui-lang=en` / ★English 且 OSD 显示英文；
+     手动选 English 后即便 ES 改回中文也不被覆盖；`--clear-manual` 后恢复自动。
+     ES 设置已还原 `zh-CN`，设备最终 ES active、`sys-lang: 11`、无残留标记。
+
+## 剩余（任务 #17）
+
+- 整镜像烘焙 Vita3K + WSI 层、仓库 README 定稿、重复的 `snes` ES 条目。
+- 百度网盘上传仍被阻塞，不做。
+- **真机人工确认**：GUI 方向/A/B、游戏内十字/摇杆/R1、音量键、Select+Start 回 ES。
+  自动化只验证了事件链路与退出，未验证游戏内视觉反馈。
+
+## 已经踩平的关键坑（细节见仓库 darkos/README.md）
+
+- **GUI 应用列表不吃键盘焦点**：`AppsListTable::AppsListTable` 里
+  `setFocusPolicy(Qt::NoFocus)`，`settingsCategory` 也是；方向键/摇杆发再多
+  `ArrowUp/Down` 也选不中行，只有 `mousePressEvent` / `mouseDoubleClickEvent`
+  能选中与启动。所以 GUI 操控必须走真实指针：给 mapper 加第二路 uinput
+  相对鼠标（`vita3k-mouse`），仅在 GUI 模式启用，游戏模式保持原键盘映射。
+- **ES 启动不能用 logind 的 `/run/user/1000`**：它是随 ark 登录会话挂载/卸载的 tmpfs。
+  SSH 调试时存在，真机控制台无会话时不存在 → Weston `fatal: XDG_RUNTIME_DIR ... is not
+  a directory` → launcher 退出回 ES，表现就是"一进游戏就闪退"。改用自有
+  `RTDIR=/run/vita3k`，launcher 自己 `mkdir -p`/`chown`/`chmod`；所有测试脚本的 RT 常量
+  必须同步，否则 `weston-debug`/`weston-screenshooter` 连不上 socket。
+- **zip 是 PFS 加密包，不是解密 dump**：合法 SELF 头必须是 `53 43 45 00`（`SCE\0`，
+  `SCE_MAGIC=0x00454353`）。看到 `d3 d0 b7 a9` + 熵 8.0 = 还没过 `decrypt_install_nonpdrm`。
+  只有 Vita3K 自己的安装器能解（work.bin → zRIF → F00D + keystone）；从 zip 直接
+  `unzip` 到 `ux0/app` 一定报 `Invalid SELF`。修法见 `scripts/tests/v3k-repair-decrypt.sh`：
+  把 `ux0/app`、`ux0/patch` bind mount 到 btrfs 让安装器跑完，再顺序拷回 exFAT。
+- **ES 每次启动都不能重装 zip**：`psvita-launch.sh` 必须从文件名提取 TITLEID，
+  已安装就 `-r <TID>`。CLI 安装没有 reinstall_callback，会 `remove_all` 后重解压，
+  exFAT 上 1766 文件 × 3 遍写会锁死设备并留下半截（加密）app。
+- **gptokeyb 在这台机器上是坏的**，已删除 `vita3k.gptk`，改用 `vita3k-pad.py`
+  （evdev 读 `rk3562-joystick` → 写名为 `vita3k-pad` 的 uinput 键盘；自带
+  Select+Start SIGKILL；手柄重插不丢键盘）。坏的两点：从不打开 /dev/uinput（一个键
+  都发不出）；`-1 Vita3K -sudokill` 解析后 kill 目标为空 → `kill -9` usage 错误 →
+  自己退出 → 整局输入全死。这就是用户报的"所有按键都无法操控"。
+- 映射不 EVIOCGRAB，SDL 手柄和 uinput 键盘两条路都送同一个键，所以键位要和 Vita3K
+  键盘绑定对齐（cross=Enter、circle=Escape、square=Space、triangle=Backspace、
+  start=Insert、select=Delete、L1/R1/L2/R2=PageUp/PageDown/Home/End），启动器用
+  `/roms/vita3k/.darkos-controls` 标记只写一次。改手柄映射改 `vita3k-pad.py` 顶部
+  `BTN_MAP`/`STICK`。
+- ogage 全程不停（音量/亮度热键，只读 evdev）；killer_daemon 会话期间停、退出后拉起。
+  注意 killer_daemon 以 `python3` 运行，`pidof killer_daemon` 永远查不到，要看
+  `systemctl is-active killer_daemon.service`。
+- 自动启动三坑：模态 Welcome 挡住 QTimer（prime `show-welcome: false`）；目录安装
+  app+patch 返回 2 且补丁 category 是 gp（已装就改 `-r TITLEID`）；CLI11 吞 leading
+  `/`（要 `-- /roms/...`）。第四坑在上游：`main.cpp` 把自动启动 title 写进局部 `cfg`
+  而 Config 已被 move 进 EmuEnvState → `patch_vita3k.py` 改成 `emuenv.cfg`。
+- Mali blob 是 gbm winsys，没有 `VK_KHR_wayland_surface`；ginkage/vulkan-wsi-layer
+  以 **implicit** layer 补（`VK_ADD_IMPLICIT_LAYER_PATH`，不是 `VK_ADD_LAYER_PATH`），
+  Vulkan-Headers 钉 v1.4.368。libMali 静态链接的 wl_* 符号靠 LD_PRELOAD 真
+  libwayland-client 压住。
+- `/roms` 是 exFAT，不能建符号链接；Vita3K 用 portable 模式把数据落在 `/roms/vita3k`。
+- 设备 evdev.list_devices() **不排序**（新的在前），所以克隆手柄会先被映射进程选中，
+  这是注入测试能成立的前提。
+- 用户可能在玩：动设备前先 `systemctl is-active psvita-session.service`，活着就别杀。
+
+## 设备与连接
+
+- `ark@192.168.0.23`（办公室 2026-11-12，密码 ark，sudo 免密）；
+  家里/另一网段是 `ark@192.168.31.125`，密钥 `C:\Users\llj\.ssh\id_ed25519`。
+  DHCP 会变，先 ping 再连。
+- 固件 3.74 + 字库 3.73 已装；游戏 `Blast 'Em Bunnies (PCSE00328)` 已装在
+  `/roms/vita3k/fs/ux0/app/PCSE00328`，zip 在 `/roms/psvita/`。
+- 设备上脚本在 `/home/ark/vita3k-scripts/`（launcher/mapper/installer 已是最新），
+  测试脚本 `/home/ark/v3k-*.sh|py`，日志 `/home/ark/pad-live.log`、
+  `/roms/vita3k/vita3k-pad.log`、`/roms/vita3k/weston.log`。
+- 性能参考：A53 开场 30 FPS、着色器编译 9–15、稳态 10–15；RSS 1.0–1.1 GiB。
+
+## 文件清单
+
+- `README-继续移植.md` —— 本文件（当前暂停点）
+- `ci/build-vita3k.yml`、`ci/build-vita3k-wsi.yml` —— 当前两个工作流
+  （`ci/vita3k-ci.patch`、`ci/fork_build.h.example` 为早期历史参考）
+- `scripts/` —— 移植脚本当前副本：`psvita-launch.sh`、`vita3k-pad.py`、
+  `install_vita3k.sh`、`install_vita3k_wsi.sh`、`package_vita3k.sh`、
+  `patch_vita3k.py`、`patch_es_vita.py`、`make_psvita_theme.py`、`vita3k-ports-gui.sh`
+- `scripts/tests/` —— 设备测试脚本：`v3k-pad-live.py`（端到端手柄）、
+  `v3k-padmap-test.py`（键码）、`v3k-es-test2.sh`（ES zip 自动启动）、
+  `v3k-ci-wsi.sh`（WSI 复验）、`v3k-inject.py`（uinput 键盘注入）、
+  `v3k-boot-r.sh`、`v3k-ci-watch.sh`（CI 轮询）、`v3k-gptk-repro3.py`（gptokeyb 根因取证）
+- `repo/dArkOS-PokectAis-main.bundle` —— 早期全量 bundle（基线 `ef8c000`）
+- `repo/dArkOS-PokectAis-since-ef8c000.bundle` —— 增量 bundle（ef8c000..d8040b5，20 个提交）；
+  办公室 `git clone repo/dArkOS-PokectAis-main.bundle dArkOS` 后
+  `git fetch ../repo/dArkOS-PokectAis-since-ef8c000.bundle main && git merge --ff-only FETCH_HEAD`，
+  或直接 clone GitHub
+- `scripts/tests/v3k-repair-decrypt.sh` —— **本次修复**：btrfs bind mount 重装解密，
+  备份 + 顺序拷回 exFAT；设备副本 `/home/ark/v3k-repair-decrypt.sh`
+- `logs/v3k-play-verify-20261112.out`、`logs/v3k-pad-live-20261112.out` —— 5 分钟
+  渲染复验与手柄/退出复验完整输出
+- `shots/play-t60.png`、`shots/play-t150.png`、`shots/play-t300.png` —— 修复后
+  实时 3D 画面（教程弹窗、3D 兔子、计分/计时/摇杆/开火键）
+- `scripts/tests/v3k-play-verify.sh`、`scripts/tests/v3k-pad-live.py` —— 复验脚本
+- `logs/run-43040079349-failed-apt.log` —— 本次 CI 失败完整日志（apt DNS + exit 124）
+- `logs/pad-live.log`、`logs/vita3k-pad.log` —— 手柄端到端测试与映射进程日志
+- `logs/run-*.zip`、`logs/last-build-step.log`、`logs/weston2.*` —— 早期历史日志
+- `shots/ciwsi-t120.png` —— 游戏内实时 3D 画面（血条/计分/雷达/计时器）
+- `shots/input-after-nav.png` —— uinput 注入后 GUI 焦点移动的证据
+- `shots/padlive-0.png` —— 新映射下的 GUI（单行列表，方向键看不出变化属正常）
+- `source/` —— Vita3K-Plus v1.4-Corrected 源码与子模块清单（早期快照，未改动）

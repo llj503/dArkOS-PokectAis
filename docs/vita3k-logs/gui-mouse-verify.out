@@ -1,0 +1,19 @@
+[21:33:08] real pad /dev/input/event4
+[21:33:09] clone paths ['/dev/input/event5']
+[21:33:09] == launching Vita3K GUI (no ROM) ==
+[21:33:13] Vita3K pid 201524
+[21:33:17] mapper log: vita3k-pad: mode=gui (R3 switches gui->game)
+vita3k-pad: reading /dev/input/event5 (rk3562-joystick)
+[21:33:17] mouse node /dev/input/event7 vita3k-mouse
+[21:33:19] shot gui-mouse-before.png
+[21:33:19] == injecting stick / dpad / A / B on the clone pad ==
+[21:33:22] pressed a
+[21:33:23] pressed a
+[21:33:24] pressed b
+[21:33:24] REL_X= 70 REL_Y= 40
+[21:33:24] REL sample [(2, 0, 9), (2, 0, 9), (2, 0, 9), (2, 0, 9), (2, 0, 9), (2, 0, 9), (2, 0, 9), (2, 0, 9)]
+[21:33:24] BTN_LEFT events 4 BTN_RIGHT events 2
+[21:33:24] MOUSE_LINK OK
+[21:33:26] shot gui-mouse-after.png
+[21:33:26] weston mouse lines: ['[21:32:13.018] event7  - vita3k-mouse: is tagged by udev as: Mouse', '[21:32:13.018] event7  - vita3k-mouse: device is a pointer', '[21:32:13.019] libinput: configuring device "vita3k-mouse".', '[21:33:13.405] event7  - vita3k-mouse: is tagged by udev as: Mouse', '[21:33:13.405] event7  - vita3k-mouse: device is a pointer', '[21:33:13.405] libinput: configuring device "vita3k-mouse".']
+[21:33:32] post: ES active session inactive V3K none

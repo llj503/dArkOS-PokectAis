@@ -3,7 +3,7 @@
 # archive install must auto-boot instead of parking in the GUI.
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 OUT=/home/ark/vita3k-install
-RT=/run/user/1000
+RT=/run/vita3k
 SOCK=wayland-vita3k
 ZIP="/roms/psvita/Blast Em Bunnies (PCSE00328).zip"
 

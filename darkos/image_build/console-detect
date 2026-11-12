@@ -1,0 +1,26 @@
+#!/bin/bash
+# Unified hotkey provider for the psvita tooling.
+#
+# console_detect (https://github.com/lcdyk0517/console-detect) reports the
+# board's hotkey type with -t/--hotkey: e.g. "happy5" or "select". All pad
+# hotkeys in this port go through this wrapper so there is one place to change
+# the mapping. This RK3562 board's DTB (rk3562-ro520c.dtb) is not in the tool's
+# table and /boot/.console is absent, so fall back to a local override file.
+set -u
+BIN=/usr/local/bin/console_detect
+OVERRIDE=/roms/vita3k/.hotkey-type
+
+case "${1:-}" in
+    -t|--hotkey) ;;
+    *) exec "$BIN" "$@" ;;
+esac
+
+T=$(timeout 5 "$BIN" -t 2>/dev/null | tr -d '\r\n')
+case "$T" in
+    happy5|select) printf '%s\n' "$T"; exit 0 ;;
+esac
+if [ -r "$OVERRIDE" ]; then
+    tr -d '\r\n' < "$OVERRIDE"; echo
+    exit 0
+fi
+echo happy5

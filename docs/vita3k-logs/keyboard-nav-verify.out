@@ -1,0 +1,13 @@
+[00:04:05] launching Vita3K GUI
+[00:04:09] Vita3K pid 457565
+[00:04:19] mapper: vita3k-pad: mode=gui (keyboard nav; Select+R3 = pointer; journal auto-sync) | vita3k-pad: reading /dev/input/event4 (rk3562-joystick)
+[00:04:21] shot nav-before.png
+[00:04:21] == d-pad Down (should highlight the first row) ==
+[00:04:21] sent down
+[00:04:24] shot nav-after-down.png
+[00:04:24] == Enter (should boot the selected title) ==
+[00:04:24] sent enter
+[00:04:28] journal markers: [00:04:24.404] |I| [load_app_impl]: Title: Blast 'Em Bunnies | [00:04:24.542] |I| [load_app_impl]: Main executable BlastEmBunnies (eboot.bin) loaded
+[00:04:28] BOOTED= True
+[00:04:28] NAV_VERIFY_DONE
+[00:04:35] post: ES active session inactive

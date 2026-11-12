@@ -1,0 +1,48 @@
+[21:05:20] post: ES=active weston=none
+[21:05:20] bundle: name: pocketAis-Vita3KPlus-armv8a-20261111c
+[21:05:20] == launching the ES rom path ==
+Running as unit: psvita-session.service; invocation ID: f4033b494cd54d5ebb792cf40a138037
+[21:05:23] VITA3K pid=167566
+[21:05:23] boot mode: 
+[21:06:23] ===== t=60s =====
+	View 0 (role xdg_toplevel, PID 167566, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 11 FPS (92 ms) | 960x544 | Bilinear' of Vita3K, 0x5597048740):
+		dmabuf buffer
+	View 0 (role xdg_toplevel, PID 167566, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x5597164740):
+		SHM buffer
+[21:06:26] shot play-t60.png
+[21:06:26] alsa:       1 state: RUNNING 
+[21:06:26] ogage=158114 killer=stopped master=30%
+[21:07:56] ===== t=150s =====
+	View 0 (role xdg_toplevel, PID 167566, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 11 FPS (92 ms) | 960x544 | Bilinear' of Vita3K, 0x5597048740):
+		dmabuf buffer
+	View 0 (role xdg_toplevel, PID 167566, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x5597164740):
+		SHM buffer
+[21:07:58] shot play-t150.png
+[21:07:58] alsa:       1 state: RUNNING 
+[21:07:58] ogage=158114 killer=stopped master=30%
+[21:10:28] ===== t=300s =====
+	View 0 (role xdg_toplevel, PID 167566, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 11 FPS (92 ms) | 960x544 | Bilinear' of Vita3K, 0x5597048740):
+		dmabuf buffer
+	View 0 (role xdg_toplevel, PID 167566, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x5597164740):
+		SHM buffer
+[21:10:31] shot play-t300.png
+[21:10:31] alsa:       1 state: RUNNING 
+[21:10:31] ogage=158114 killer=stopped master=30%
+[21:10:31] == boot/decrypt timeline ==
+Nov 11 21:10:03 ngp45ht psvita-launch.sh[167566]: [21:10:03.324] |I| [write_file]: *** TTY: Framerate = 10.897732 fps, 91.762215 ms
+Nov 11 21:10:05 ngp45ht psvita-launch.sh[167566]: [21:10:05.376] |I| [write_file]: *** TTY: Framerate = 10.719832 fps, 93.285042 ms
+Nov 11 21:10:07 ngp45ht psvita-launch.sh[167566]: [21:10:07.422] |I| [write_file]: *** TTY: Framerate = 10.752619 fps, 93.000603 ms
+Nov 11 21:10:09 ngp45ht psvita-launch.sh[167566]: [21:10:09.443] |I| [write_file]: *** TTY: Framerate = 10.887321 fps, 91.849953 ms
+Nov 11 21:10:11 ngp45ht psvita-launch.sh[167566]: [21:10:11.470] |I| [write_file]: *** TTY: Framerate = 10.853103 fps, 92.139549 ms
+Nov 11 21:10:13 ngp45ht psvita-launch.sh[167566]: [21:10:13.516] |I| [write_file]: *** TTY: Framerate = 10.754533 fps, 92.984047 ms
+Nov 11 21:10:15 ngp45ht psvita-launch.sh[167566]: [21:10:15.526] |I| [write_file]: *** TTY: Framerate = 10.940928 fps, 91.399918 ms
+Nov 11 21:10:17 ngp45ht psvita-launch.sh[167566]: [21:10:17.539] |I| [write_file]: *** TTY: Framerate = 10.931868 fps, 91.475677 ms
+Nov 11 21:10:19 ngp45ht psvita-launch.sh[167566]: [21:10:19.565] |I| [write_file]: *** TTY: Framerate = 10.855916 fps, 92.115669 ms
+Nov 11 21:10:21 ngp45ht psvita-launch.sh[167566]: [21:10:21.604] |I| [write_file]: *** TTY: Framerate = 10.789671 fps, 92.681229 ms
+Nov 11 21:10:23 ngp45ht psvita-launch.sh[167566]: [21:10:23.643] |I| [write_file]: *** TTY: Framerate = 10.795751 fps, 92.629036 ms
+Nov 11 21:10:25 ngp45ht psvita-launch.sh[167566]: [21:10:25.664] |I| [write_file]: *** TTY: Framerate = 10.880620 fps, 91.906525 ms
+Nov 11 21:10:27 ngp45ht psvita-launch.sh[167566]: [21:10:27.692] |I| [write_file]: *** TTY: Framerate = 10.849474 fps, 92.170364 ms
+Nov 11 21:10:29 ngp45ht psvita-launch.sh[167566]: [21:10:29.851] |I| [write_file]: *** TTY: Framerate = 8.338197 fps, 119.930008 ms
+[21:10:31] PLAY_VERIFY_DONE
+[21:10:31] == cleanup ==
+[21:10:38] post: ES=active weston=none

@@ -1,0 +1,26 @@
+[02:22:55] hotkey type: happy5
+[02:22:55] sys-lang before = 1
+[02:22:56] clone nodes ['/dev/input/event5']
+[02:22:56] launching game
+[02:23:00] Vita3K pid 677730
+[02:23:12] mapper: vita3k-pad: mode=game hotkey=316 (console-detect -t), keyboard nav; Select+R3 = pointer; journal auto-sync | vita3k-pad: reading /dev/input/event5 (rk3562-joystick)
+[02:23:15] shot osd-before.png
+[02:23:15] scene before: ["View 0 (role xdg_toplevel, PID 677730, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 30 FPS (34 ms) | 960x544 | Bilinear' of Vita3K, 0x55b22196c0):", "View 0 (role xdg_toplevel, PID 677730, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55b212a730):"]
+[02:23:15] == press Home ==
+[02:23:15] pressed home
+[02:23:20] shot osd-open.png
+[02:23:20] scene osd-open: ["View 0 (role xdg_toplevel, PID 677925, surface ID 8, top-level window 'Vita3K OSD' of vita3k-osd, 0x55b229e5f0):", "View 0 (role xdg_toplevel, PID 677730, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 19 FPS (53 ms) | 960x544 | Bilinear' of Vita3K, 0x55b22196c0):", "View 1 (role xdg_toplevel, PID 677730, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55b212a730):"]
+[02:23:20] OSD_WINDOW= True
+[02:23:20] osd active flag: True
+[02:23:20] == Down + A (系统语言 简体中文) ==
+[02:23:20] pressed down
+[02:23:20] pressed a
+[02:23:22] pending: sys-lang=11
+[02:23:22] osd active flag after: False
+[02:23:25] shot osd-closed.png
+[02:23:25] scene closed: ["View 0 (role xdg_toplevel, PID 677730, surface ID 19, top-level window 'Blast 'Em Bunnies (PCSE00328) | Vulkan | 17 FPS (59 ms) | 960x544 | Bilinear' of Vita3K, 0x55b22196c0):", "View 0 (role xdg_toplevel, PID 677730, surface ID 15, top-level window 'Vita3K+ v1.4 4-5581fb1-nckstwrt/HEAD' of Vita3K, 0x55b212a730):"]
+[02:23:25] OSD_VERIFY_DONE
+[02:23:29] sys-lang after cleanup = 11
+[02:23:29] pending after cleanup exists = False
+[02:23:29] star cards: 
+[02:23:31] post ES active

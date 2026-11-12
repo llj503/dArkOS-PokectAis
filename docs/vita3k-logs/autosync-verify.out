@@ -1,0 +1,14 @@
+[22:51:18] stale session stopped, ES = active
+[22:51:19] launching game (real ES path)
+[22:51:23] Vita3K pid 346423
+[22:51:35] mapper log at game: vita3k-pad: mode=game (R3 switches gui->game, journal auto-sync) | vita3k-pad: reading /dev/input/event4 (rk3562-joystick)
+[22:51:35] == in-game menu: PS, Right, Enter (Exit to app list) ==
+[22:51:35] sent p
+[22:51:37] sent right
+[22:51:37] sent enter
+[22:51:40] AUTO_SWITCH_DETECTED after 3 s
+[22:51:40] mapper log final: vita3k-pad: mode=game (R3 switches gui->game, journal auto-sync) | vita3k-pad: reading /dev/input/event4 (rk3562-joystick) | vita3k-pad: mode -> gui (game closed)
+[22:51:40] AUTO_SWITCH OK
+[22:51:41] mouse node alive: False ['v3k-autosync-verify', 'rk3562-joystick', 'adc-keys', 'rockchip-rk817 Headset', 'headset-keys', 'rk805 pwrkey']
+[22:51:41] JOURNAL: [22:51:23.934] |I| [load_app_impl]: Title: Blast 'Em Bunnies | [22:51:24.070] |I| [load_app_impl]: Main executable BlastEmBunnies (eboot.bin) loaded | [22:51:37.357] |I| [on_game_closed]: Game closed: Blast 'Em Bunnies
+[22:51:41] AUTOSYNC_VERIFY_DONE session left running in Vita3K GUI
