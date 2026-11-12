@@ -54,7 +54,10 @@ jobs:
         run: |
           # ports.ubuntu.com has hung for >20min on arm runners (2026-11-11), so
           # bound every acquire and fall back to public ubuntu-ports mirrors.
-          APT_OPTS="-o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::ForceIPv4=true"
+          # Error-Mode=any makes update return non-zero on ANY failed index; by
+          # default apt returns 0 on partial fetch failures, which silently
+          # skipped the mirror fallback and left install to time out (exit 124).
+          APT_OPTS="-o APT::Update::Error-Mode=any -o Acquire::Retries=2 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 -o Acquire::ForceIPv4=true"
           apt_update() {
             timeout 240 sudo apt-get $APT_OPTS update && return 0
             for m in https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports http://ftp.jaist.ac.jp/pub/Linux/ubuntu-ports; do
