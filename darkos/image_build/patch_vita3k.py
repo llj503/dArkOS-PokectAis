@@ -183,7 +183,12 @@ PAUSE_MENU_BODY = PAUSE_MENU_MARKER + """
     m_app_session.set_pause_reason(app::AppSessionPauseReason::User, true);
     refresh_emulation_actions();
 
-    QMessageBox box(this);
+    // No parent: with MainWindow as parent Qt embeds the dialog inside the
+    // main window, which the fullscreen game window covers under kiosk-shell.
+    // A parentless dialog gets its own Wayland toplevel, stacked on top.
+    QMessageBox box;
+    box.setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
+    box.setWindowModality(Qt::ApplicationModal);
     box.setWindowTitle(tr("Vita3K"));
     box.setText(tr("Game paused"));
     auto *resume_button = box.addButton(tr("Resume"), QMessageBox::AcceptRole);
