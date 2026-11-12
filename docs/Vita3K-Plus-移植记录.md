@@ -230,6 +230,18 @@
      临时改成 `en-US` → `sys-lang: 1` / `.ui-lang=en` / ★English 且 OSD 显示英文；
      手动选 English 后即便 ES 改回中文也不被覆盖；`--clear-manual` 后恢复自动。
      ES 设置已还原 `zh-CN`，设备最终 ES active、`sys-lang: 11`、无残留标记。
+18. **同步到 GitHub（16:20）**：`scripts/tests/v3k-github-sync.py` 把本轮成果同步到
+   `llj503/dArkOS-PokectAis` 的 main：
+   - `darkos/image_build/`：更新 `psvita-launch.sh` / `vita3k-pad.py`，新增
+     `psvita-lang.py`、`psvita-option.py`、`console-detect`、`vita3k-osd-wl.c`、
+     `vita3k-osd.c`(SDL2 参考版)、`xdg-shell.xml`；`tests/` 补齐 30+ 复验脚本。
+   - `docs/`：`Vita3K-Plus-移植记录.md`、`Vita3K-Plus-同步说明.md`、
+     `images/vita3k-*.png`(7 张)、`vita3k-logs/*.out`(6 个)；根 README 加入口。
+   - 提交 `ae8a5d0`（49 files, +5167）与 `5e4509d`（`.gitattributes` 给
+     `console-detect`/`.c`/`.xml` 等锁 LF，避免 Windows clone 后 CRLF 破坏 shebang）。
+     远程 `main` HEAD 与本地一致，匿名 API 复核文件清单通过。
+   - 不上传：Release tarballs（已在 GitHub Releases）、`source/` 上游源码快照、
+     `repo/*.bundle`、`.workbuddy/`、`__pycache__`、CI 失败日志等临时文件。
 
 ## 剩余（任务 #17）
 
