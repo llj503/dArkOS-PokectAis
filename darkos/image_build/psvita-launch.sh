@@ -14,7 +14,15 @@
 # and all Vita data (firmware, installed games, config, cache) in /roms/vita3k.
 set -u
 
+# Ports -> "Vita3K 高级设置" passes --native-gui; a plain no-ROM launch shows
+# the handheld grid frontend. This script re-execs itself as a transient root
+# service, so the choice must travel through an environment variable.
 ROM="${1:-}"
+NATIVE_GUI=${PSVITA_NATIVE_GUI:-0}
+if [ "$ROM" = "--native-gui" ]; then
+    NATIVE_GUI=1
+    ROM=""
+fi
 
 # ES "option cards": plain .sh entries in /roms/psvita are settings, not Vita3K
 # content. Run them directly in ES's own process instead of starting Weston.
@@ -36,6 +44,7 @@ if [ "${PSVITA_SESSION:-}" != "1" ]; then
     sudo systemctl reset-failed psvita-session.service 2>/dev/null || true
     exec sudo systemd-run --unit=psvita-session --collect \
         --setenv=PSVITA_SESSION=1 \
+        --setenv=PSVITA_NATIVE_GUI="$NATIVE_GUI" \
         --setenv=PSVITA_WESTON_DEBUG="${PSVITA_WESTON_DEBUG:-0}" \
         --working-directory=/home/ark \
         /usr/local/bin/psvita-launch.sh "$ROM"
@@ -61,6 +70,18 @@ GOV_CPU=
 GOV_GPU=
 GOV_DMC=
 GPU_DEVFREQ=
+# Weston/ogage can leave the DSI backlight at 0 when the session ends, which
+# looks exactly like a black screen even though ES is running. Remember the ES
+# brightness and put it back both while Weston is up and after ES is restarted.
+BL_SYS=/sys/class/backlight/backlight/brightness
+BL_SAVED=
+
+restore_brightness() {
+    [ -n "$BL_SAVED" ] || return 0
+    [ -w "$BL_SYS" ] || return 0
+    echo "$BL_SAVED" > "$BL_SYS" 2>/dev/null || true
+    return 0
+}
 
 set_governors() {
     local cpu=/sys/devices/system/cpu/cpufreq/policy0/scaling_governor
@@ -103,6 +124,7 @@ cleanup() {
         kill -9 "$WESTON_PID" 2>/dev/null
     fi
     rm -f "$RTDIR/$SOCK" "$RTDIR/$SOCK.lock"
+    rm -f "$DATA/.frontend-active" "$DATA/.osd-active"
     # Settings chosen in the in-game OSD are applied only now: Vita3K rewrites
     # config.yml on exit, so writing it while the game runs would be lost.
     if [ -f "$DATA/.osd-pending" ]; then
@@ -112,12 +134,16 @@ cleanup() {
     systemctl restart killer_daemon.service >/dev/null 2>&1 || true
     systemctl restart ogage.service >/dev/null 2>&1 || true
     systemctl start emulationstation
+    # ogage/ES can blank the panel during their startup; restore once more.
+    sleep 1
+    restore_brightness
 }
 trap cleanup EXIT
 
 systemctl stop emulationstation
 # Let ES drop DRM master before Weston asks for it.
 sleep 2
+[ -r "$BL_SYS" ] && BL_SAVED=$(cat "$BL_SYS")
 set_governors
 
 # Follow the ES language, same detection as dArkOS4RK3562's flycast/ps2
@@ -161,6 +187,8 @@ if [ ! -S "$RTDIR/$SOCK" ]; then
 fi
 # Weston runs as root, Vita3K as ark.
 chmod 0666 "$RTDIR/$SOCK"
+# Keep the panel lit: some Weston builds blank the backlight on DRM takeover.
+restore_brightness
 
 # Select+Start kills the emulator; the EXIT trap then brings ES back.
 # CMake names the executable Vita3K (OUTPUT_NAME), so that is the process name.
@@ -301,6 +329,76 @@ if [ -n "$ROM" ]; then
     else
         ARGS+=(-r "$ROM")
     fi
+fi
+
+# ---- first-run firmware / font gate -------------------------------------
+# Vita3K's "Missing Firmware" dialog and welcome wizard are desktop Qt modal
+# boxes; neither is usable with a gamepad. When either component is missing,
+# show the same quick-settings panel instead and let the user install a .PUP
+# through its controller-driven file browser, then boot the game.
+firmware_ok() {
+    [ -d "$DATA/fs/vs0" ] && [ -n "$(ls -A "$DATA/fs/vs0" 2>/dev/null)" ] &&
+    [ -d "$DATA/fs/sa0" ] && [ -n "$(ls -A "$DATA/fs/sa0" 2>/dev/null)" ]
+}
+
+setup_panel() {
+    rm -f "$DATA/.osd-action" "$DATA/.osd-pending" "$DATA/.osd-active"
+    # Keep the pad mapper completely out of the way while setup owns the screen.
+    touch "$DATA/.frontend-active"
+    # Must run as root: /dev/input/event* is root:input 0660, so an ark
+    # process cannot open the gamepad. (The in-game OSD is spawned by the
+    # root pad mapper and therefore already has access.)
+    env -u LD_PRELOAD -u LD_LIBRARY_PATH \
+        -u VK_ADD_IMPLICIT_LAYER_PATH -u QT_QPA_PLATFORM -u QT_PLUGIN_PATH \
+        HOME=/home/ark XDG_RUNTIME_DIR="$RTDIR" WAYLAND_DISPLAY="$SOCK" \
+        /usr/local/bin/vita3k-osd --setup
+    rm -f "$DATA/.frontend-active"
+    ACTION=$(head -1 "$DATA/.osd-action" 2>/dev/null)
+    rm -f "$DATA/.osd-action"
+    # No Vita3K process is running yet, so settings can be applied right away.
+    if [ -f "$DATA/.osd-pending" ]; then
+        python3 /usr/local/bin/psvita-option.py --apply-pending >/dev/null 2>&1 || true
+    fi
+}
+
+if [ -n "$ROM" ] && ! firmware_ok && [ -x /usr/local/bin/vita3k-osd ]; then
+    echo "psvita: firmware/font missing -> quick settings setup" >&2
+    for _ in $(seq 1 10); do
+        ACTION=
+        setup_panel
+        case "${ACTION:-}" in
+            install*)
+                IFS=$'\t' read -r _tag _kind _path <<< "$ACTION"
+                if [ -n "$_path" ] && [ -f "$_path" ]; then
+                    echo "psvita: installing $_kind from $_path" >&2
+                    runuser -u ark -- env -u LD_PRELOAD -u LD_LIBRARY_PATH \
+                        -u VK_ADD_IMPLICIT_LAYER_PATH \
+                        HOME=/home/ark XDG_RUNTIME_DIR="$RTDIR" \
+                        QT_QPA_PLATFORM=offscreen SDL_VIDEODRIVER=offscreen \
+                        "$BUNDLE/vita3k.sh" --firmware "$_path" \
+                        >>"$DATA/firmware-install.log" 2>&1 || true
+                fi
+                # Both components present -> go straight into the game.
+                firmware_ok && break
+                ;;
+            launch*) break ;;
+            quit*)   exit 0 ;;
+            *)       ;;   # settings applied / file browser cancelled: show again
+        esac
+    done
+fi
+
+# No ROM + not explicitly asking for the Qt GUI: run the handheld frontend.
+# It inherits this session's environment and execs Vita3K itself when the user
+# picks a game, so the EXIT trap above still owns the whole session lifetime.
+if [ -z "$ROM" ] && [ "$NATIVE_GUI" -eq 0 ] && [ -x /usr/local/bin/vita3k-frontend ]; then
+    echo "psvita: starting handheld frontend" >&2
+    rm -f "$DATA/.frontend-active"
+    runuser -u ark -- env \
+        HOME=/home/ark USER=ark LOGNAME=ark \
+        XDG_RUNTIME_DIR="$RTDIR" WAYLAND_DISPLAY="$SOCK" \
+        /usr/local/bin/vita3k-frontend
+    exit 0
 fi
 
 runuser -u ark -- env \

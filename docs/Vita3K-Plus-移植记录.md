@@ -339,3 +339,222 @@
 - `shots/input-after-nav.png` —— uinput 注入后 GUI 焦点移动的证据
 - `shots/padlive-0.png` —— 新映射下的 GUI（单行列表，方向键看不出变化属正常）
 - `source/` —— Vita3K-Plus v1.4-Corrected 源码与子模块清单（早期快照，未改动）
+
+## 2026-11-13 新机安装（ark@192.168.0.176，ngp45ht）
+
+在新刷的 dArkOS（Debian trixie / 内核 5.10.226 #23 / bl31-v1.23 / uboot 11-09）上，
+把 20261112g 编译产物完整装进系统，并真机复验通过。
+
+- 一键部署脚本 `scripts/tests/v3k-install-fresh.py [host]`（SFTP 上传 + md5 逐文件校验 +
+  两个安装器 + 附加后端 + ES 卡片 + 主题 + OSD 设备端编译），复验脚本
+  `scripts/tests/v3k-install-verify.py [host] [shot]`。
+- 安装内容：`/opt/vita3k`（bundle 20261112g）、`/opt/vita3k-wsi`
+  （release `vita3k-wsi-a53-20261111`，匿名下载，校验和 OK）、
+  `/usr/local/bin/{psvita-launch.sh,vita3k-pad.py,psvita-lang.py,psvita-option.py,console-detect,vita3k-osd}`、
+  `/etc/emulationstation/es_systems.cfg` 的 psvita 条目（.sh 卡片扩展）、
+  `/roms/psvita/*.sh` 7 张选项卡片、`/roms/themes/es-theme-nes-box/psvita/` 主题图。
+- **新镜像缺两个系统依赖**：`weston`（14.0.2-1，含 kiosk-shell.so）与
+  `libfreetype-dev`（OSD 中文渲染头文件）；部署脚本已改为 apt 自动补装。
+  首次漏装 weston 时实测报 `weston: command not found` → 启动器 "Weston did not come up"。
+- **主题目录在这台机器是 `/roms/themes/es-theme-nes-box`**，不是
+  `/home/ark/.emulationstation/themes/`；安装器的主题步骤会静默跳过，部署脚本用
+  本机 PIL 生成 system.png / background_icon.png / theme.xml 单独上传。
+- **首次启动的 config.yml 陷阱**：只写 `---` + `sys-lang: 11` 时，Vita3K 用默认配置
+  整体重写（退出后 sys-lang 1 / show-welcome true / keyboard-button-cross KeyX），
+  Welcome 模态框重现且按键映射被冲掉。已保存完整 194 键模板
+  `packages/vita3k-config-template.yml`（sys-lang 11、show-welcome false、
+  boot-apps-full-screen true、cross=Enter 等），新装直接落盘 + `.darkos-controls` 标记。
+- 真机复验：Weston kiosk-shell 起来、uinput `vita3k-pad`/`vita3k-mouse` 被
+  libinput 识别、Vita3K 进程稳定 30 s、`rk3562-joystick connected on port 0`、
+  第二/三次启动直达应用列表（无 Welcome、中文配置保持）、停止会话后 ES 自动恢复。
+  截图 `shots/fresh-0176.png`（首次 Welcome）、`shots/fresh-0176-2nd.png`、
+  `shots/fresh-0176-final.png`（主界面）。
+- 待用户自行完成：PS Vita 固件与游戏未迁移（新机 `/roms/vita3k` 为空），
+  GUI 里用 "Download Pre-Install Firmware" 或手动导入；旧机 0.23 当前离线。
+- 新脚本/模板暂未同步 GitHub（本轮未要求）。
+
+## 2026-11-13 后续：ES-PSVITA 只显示游戏
+
+用户要求 psvita 列表里不要出现选项卡片。已在 192.168.0.176 上执行：
+
+- `/roms/psvita/*.sh` 共 7 张卡片**移动到**
+  `/home/ark/vita3k-scripts/es-cards-backup-20261113/`（未删除，可回滚）。
+- `es_systems.cfg` psvita `<extension>` 从 `.vpk .VPK .zip .ZIP .sh .SH` 改回
+  `.vpk .VPK .zip .ZIP`；备份 `es_systems.cfg.bak-no-cards-20261113`。
+- 无 gamelist.xml 残留卡片条目；重启 ES 后 `ES=active`、独占 `/dev/dri/card0`、
+  DSI-1 connected 1024×768、背光 179/255，渲染日志无 DRM/SDL 错误。
+- 新增可回滚开关 `scripts/tests/v3k-es-cards-toggle.py hide|restore [host]`。
+- `scripts/tests/v3k-install-fresh.py` 默认**不再部署卡片**，需要时加 `--cards`；
+  后端 `psvita-option.py` / `psvita-lang.py` 只重命名已存在卡片，不会重建。
+- 注意：隐藏卡片时 `/roms/psvita` 还是空的；后来已放入
+  `突突兔独战突击兔[PCSE00328][美版][中文][1.01][NONPDRM].zip`（280 MB），
+  下节记录了首次启动的安装/固件问题。游戏内 Home 键 OSD 设置仍可用。
+- `/dev/fb0` 抓帧全黑属正常：ES 走 SDL2 KMSDRM 直渲染，不喂 fbdev 模拟层。
+
+## 2026-11-13 后续：打开 psvita 游戏黑屏（已修复）
+
+用户把 280 MB 的 PCSE00328 NONPDRM zip 放进 `/roms/psvita` 后，点游戏长时间黑屏，
+按 Select+Start 退出。日志定位为**三层原因叠加**，不是渲染黑屏：
+
+1. **首次点 zip 其实是在后台安装**：`Installing archive from CLI`，1766 个文件，
+   期间 Vita3K 不渲染任何画面；用户在第 24 秒按 Select+Start 杀掉进程，留下
+   1219 文件、无 `eboot.bin` 的半截 app，所以每次点都重来一遍。
+2. **没装 PS Vita 固件**：`fs/vs0`、`fs/sa0` 为空，商业游戏即使装完也起不来。
+   Vita3K 的判定是 `has_installed_firmware_content(fs/vs0)` 与 `(fs/sa0)`。
+3. **会话结束后背光被写成 0**（`brightness=0` 而 `bl_power=0`），所以退出回 ES
+   也是黑屏；之前多次"黑屏/重启"很可能就是它。
+
+修复动作：
+
+- 三个官方 PUP 全部 `--firmware` headless 安装：
+  - `pd0` 预装包 `https://bit.ly/4hlePsX` → `PSP2UPDAT-374-pre.PUP`（128 798 720 B）
+  - `sa0` 字库 `https://bit.ly/2P2rb0r` → `PSP2UPDAT-373-font.PUP`（56 768 512 B）
+  - **`vs0` 主固件** `http://dus01.psv.update.playstation.net/update/psv/image/2022_0209/rel_f2c7b12fe85496ec88a0391b514d6e3b/PSVUPDAT.PUP`
+    → `PSVUPDAT-374-full.PUP`（133 834 240 B）。注意前两个短链**只**给 pd0/sa0，
+    必须再装这个完整 PUP 才有 vs0；最终 `os0=69 / pd0=105 / sa0=178 / vs0=1473`。
+- headless 安装游戏：`QT_QPA_PLATFORM=offscreen SDL_VIDEODRIVER=offscreen
+  /opt/vita3k/vita3k.sh -z -- <zip>`，`nohup ... </dev/null` 才不会挂住 SSH 通道。
+  1.01 补丁内容在 exFAT 上会卡住（老问题），本体装完即停：`eboot.bin` 头
+  `53 43 45 00`（SCE\0，已解密）、1631 文件、`param.sfo` 齐全，补丁目录移为
+  `.partial-20261113`，游戏按 1.00 本体运行正常。
+- **`psvita-launch.sh` 增加背光保存/恢复**：进会话前记下 brightness，Weston
+  接管 DRM 后与 cleanup 重启 ES 后各写回一次。实测 179 → 179 → 179，
+  `ES=active`、DRM master 正常、无残留进程。本地 md5
+  `85941d4a3bdc49604023854e80c46fa1`，设备两处副本一致。
+- 之后 ES 点 zip 会走 `-r PCSE00328` **直接启动**（日志 `Title: Blast 'Em Bunnies`
+  / `Main executable ... loaded`，无 Installing archive），不再有安装期黑屏。
+  截图 `shots/game-0176-boot.png`：3D 场景 + 中文 Cross-Save 提示框，按 A 确认即可。
+- 可复用脚本 `scripts/tests/v3k-fix-game-boot.py [host]`（三个 PUP + headless 安装
+  + 半截清理 + 完整性校验）。注意首次启动新 zip 仍会有安装期无画面，属正常，
+  **不要中途按 Select+Start**；装完一次以后就秒开。
+
+## 2026-11-13 后续：Vita3K GUI 换成掌机前端
+
+用户要求把桌面式 Qt 界面（菜单栏 + 多列表格 + 日志面板）换成适合手柄的界面，
+选择「独立掌机前端」方案，**不改上游、不重编译 bundle**。
+
+- 新程序 `scripts/vita3k-frontend-wl.c` → 设备 `/usr/local/bin/vita3k-frontend`。
+  复用 OSD 的 wl_shm(ARGB8888) + xdg-shell + FreeType 中文 + 直接读手柄 evdev，
+  新增 libpng 简化 API 解 `icon0.png`、解析 `param.sfo` 的 `TITLE`。
+  全屏 1024×768、3×2 大卡片（图标 128、中文标题、TITLEID）、蓝色选中框、
+  底部常驻按键提示、多页自动分页；语言跟随 `/roms/vita3k/.ui-lang`。
+  手柄：方向键/左摇杆选择、A 启动、B 返回 ES、Home 或「高级设置」卡片进原生
+  Qt GUI、Select+Start 退出。
+- 选中游戏时前端 `execl("/opt/vita3k/vita3k.sh", "-F", "-r", TITLEID)`：
+  **进程被替换、PID 不变**，launcher 的 runuser 继续等它，EXIT trap 仍负责收尾。
+- `psvita-launch.sh`：无 ROM 时改跑前端；新增 `--native-gui` 走原 Qt GUI。
+  注意脚本会 `systemd-run` 重新执行自己，所以选择必须通过
+  `PSVITA_NATIVE_GUI` 环境变量透传（第一版没传导致高级设置入口失效，已修）。
+- `vita3k-pad.py`：新增 `.frontend-active` 检查，前端期间完全让位（不弹 OSD、
+  不转发按键）；前端 exec 前删标志，游戏内 OSD / Select+Start 立即恢复。
+- **走偏并已撤销的一轮**：曾把「集成到系统里」理解成入口位置，做了
+  `vita3k-frontend-daemon.py` + `vita3k-frontend.service`（ES 里热键开网格）。
+  这不是用户要的；设备上的 unit / 脚本已删除、服务已 disable，
+  `install_vita3k.sh` / 两个部署脚本 / `v3k-install-fresh.py` 也都改回不装守护。
+  Ports 入口仍保持为空（用户明确不要 PortMaster 接口）。
+- 部署脚本 `scripts/tests/v3k-frontend-deploy.py`（上传 + 设备端编译 + 安装 +
+  删除 Ports 入口 + 校验），`v3k-install-fresh.py` 已同步加入前端编译。
+  两个脚本都在重启 ES 后恢复背光（这镜像重启 ES 会把 brightness 写成 0）。
+- 真机验证：截图 `shots/frontend-0176.png`（网格 + 图标 + 选中框 + 中文提示条）；
+  注入 A → 同一 PID 变成 Vita3K，日志 `Title: Blast 'Em Bunnies`；
+  注入 B → `SESSION=inactive / ES=active / BL=179`；
+  `--native-gui` → `/opt/vita3k/Vita3K -F`（无 `-r`）、无 frontend 标志。
+  编译 `-Wall` 零警告，`bash -n` / `py_compile` 通过。
+
+## 2026-11-13 纠正：游戏内热键弹出设置面板（这才是"集成到系统里"）
+
+用户澄清：要的是**运行游戏时按热键，弹出可用掌机手柄操控、直观便捷的设置界面**，
+不是独立前端的入口位置。据此把大卡片界面改造成游戏内 OSD。
+
+- 重写 `scripts/vita3k-osd-wl.c`：从 7 行文字列表改成 **2×4 全屏大卡片网格**，
+  每张卡有大标题 + 当前值副标题 + 分组配色条（灰=返回/紫=语言/蓝=倍率/绿=性能），
+  蓝色选中框、顶部说明、底部常驻按键提示；中英跟随 `.ui-lang`。
+  手柄：方向键/左摇杆选择（左右 ±1、上下 ±2）、A 确认、B 返回游戏、Home 关闭；
+  启动 600 ms 去抖，避免触发 OSD 的那次热键被当成确认。
+- 触发链路完全沿用既有系统能力，无需新服务：游戏中 `vita3k-pad.py` 按
+  `console-detect -t` 得到的热键（本机 316）→ 启动 `/usr/local/bin/vita3k-osd`，
+  期间 mapper 不向游戏转发按键；OSD 自己直读手柄 evdev，不依赖 Weston 焦点/鼠标。
+- 选中项写 `.osd-pending`（`key=value`）；`psvita-launch.sh` 的 cleanup 调
+  `psvita-option.py --apply-pending` 在 Vita3K 退出后改 `config.yml`
+  （Vita3K 退出时会覆写配置，游戏内直接写会丢）。所以提示写「下次启动生效」。
+- 部署脚本 `scripts/tests/v3k-osd-grid-deploy.py`（上传 + 设备端编译 + 安装
+  `/usr/local/bin/vita3k-osd` + 撤销旧守护 + 校验）；`v3k-install-fresh.py`
+  的 OSD 编译步骤自动吃到新源码；`install_vita3k.sh` 不再安装守护/ports 脚本。
+- 真机全链路验证：
+  - 游戏中注入 316 → mapper 日志 `opened OSD`，`OSD=… / FLAG=yes`，
+    截图 `shots/osd-0176-panel.png`（7 张卡片、蓝色选中、无溢出）。
+  - 方向键下移 2 次 + A → `.osd-pending=resolution-multiplier=2`；
+    停止会话后 cleanup 应用，`config.yml` 变成 `resolution-multiplier: 2`、
+    pending 清除（测试后已恢复为 1）。
+  - B → `OSD=none / FLAG=no / PENDING` 为空，不产生设置变更。
+  - 最终 `ES=active / BL=179 / UNIT=absent / PORTS=0`。
+- 本轮新增/修改文件暂未同步 GitHub（未要求）。
+
+## 2026-11-13 后续：缺固件/字体时，游戏启动前弹出设置面板 + 文件浏览器
+
+用户要求：打开 PSVITA 游戏时若缺固件/字体，**不要弹 Vita3K 的 Qt GUI**，
+改为弹出同一个快捷设置面板，加入「安装固件 / 安装字体」，可进文件浏览选 PUP。
+
+- `psvita-launch.sh` 新增 **固件闸门**（有 ROM 时才检查）：
+  `firmware_ok()` 判断 `fs/vs0`、`fs/sa0` 是否非空；缺失则在启动 Vita3K 前
+  进入 setup 循环，调 `/usr/local/bin/vita3k-osd --setup`，Vita3K 的
+  "Missing Firmware" 模态框/欢迎页不会再出现。
+- OSD `--setup` 模式：同一个 2×5 大卡片界面，10 项 =
+  继续启动游戏 / **安装固件** / **安装字体** / 返回 ES / 6 个快捷设置项；
+  标题提示缺什么（主固件 / 字体包 / 两者）。设置项写 `.osd-pending`，
+  setup 下没有 Vita3K 进程，launcher 可立即 `psvita-option.py --apply-pending`。
+- **纯手柄文件浏览器**（同一个 C 程序内切视图）：默认从 `/roms/vita3k` 开始
+  （该目录有 `.PUP` 时，省去从 `/roms` 翻 140 个系统目录），列出子目录 +
+  `.pup/.PUP` 文件、排序、分页；方向键/摇杆选择、A 进入目录或确认文件、
+  B 上级、Home 回菜单。选中文件写 `.osd-action`：`install\t<fw|font>\t<path>`。
+- launcher 收到 action 后 headless 执行
+  `vita3k.sh --firmware <path>`（`QT_QPA_PLATFORM=offscreen`），装完重新检查；
+  两项齐全就**自动启动游戏**（`-F -r TITLEID`）；只装了固件会再次弹面板并提示
+  "缺少字体包"，继续装字体即可。也支持 `launch`（忽略缺失直接启动）、
+  `quit`（回 ES）。
+- 两个坑（都已修）：
+  1. setup OSD 最初用 `runuser -u ark` 启动，ark 打不开 `/dev/input/event*`
+     （root:input 0660）→ 手柄完全无响应。改为 **root** 启动（与 mapper 拉起的
+     游戏内 OSD 一致），`env -u` 清掉 LD_PRELOAD/QT/Vulkan 变量。
+  2. `load_dir(cwd)` 里 `snprintf(cwd, ..., "%s", path)` 源/目标同一缓冲区是 UB，
+     把路径清成空串 → 文件浏览器显示"没有文件"。改为先复制到局部 buffer。
+- 真机全流程（临时把 `vs0/sa0` 移走模拟新机）：
+  - 点游戏 → `OSD=68961 / V3K=none`，面板截图 `shots/osd-0176-setup.png`；
+  - 右+A 进文件浏览器，路径 `/roms/vita3k`，可见 7 个目录 + 3 个 PUP，
+    截图 `shots/osd-0176-browser.png`；下移 9 次选 `PSVUPDAT-374-full.PUP`；
+  - 日志 `installing firmware from ...` → `vs0=1473 / sa0=0`，
+    面板再次出现提示缺字体（截图 `shots/osd-0176-font-missing.png`）；
+  - 右×2+A 进「安装字体」浏览器，选 `PSP2UPDAT-373-font.PUP` → `sa0=178`；
+  - 两项齐全 → 自动 `/opt/vita3k/Vita3K -F -r PCSE00328`，**游戏启动**；
+  - 测试后恢复固件目录，`ES=active / BL=179`。
+- 部署脚本 `v3k-osd-grid-deploy.py` 同步 OSD 源码、`psvita-launch.sh`、
+  `install_vita3k.sh`；`v3k-install-fresh.py` 的 OSD 编译自动吃新源码。
+  编译 `-Wall` 零警告，`bash -n` / `py_compile` 通过。
+
+## 2026-11-13 参考安卓版：首次设置页对齐 Android 前端
+
+用户要求参考本地 `android/` 前端的设置界面。调研结论：
+`InitialSetupScreen.kt`（528 行，2 页向导 + 3 张 FirmwareCard + StatusBadge
+已装/缺失/可选）、`EmulationPauseMenu.kt`（1017 行，抽屉 + 4 Tab + 内嵌设置页）、
+`SettingsRoute.kt`/`SettingsSections.kt`（831+1893 行，11 分类 Chip + 分组卡片 +
+开关/单选/滑块/帮助 + 搜索 + 全局/单游戏 Scope）。安卓 UI 目前只有英文
+（`UiLanguages.kt` 仅 System Default/English），掌机版反而有中英切换。
+用户选择「首次设置页对齐安卓」落地。
+
+- setup 面板改成 **10 张卡（2×5）**，前 5 项按安卓首次设置页组织：
+  继续启动游戏 / **预装包（可选）** / **主固件** / **字体包** / **固件下载区域**；
+  后 5 项为系统语言×2、画面倍率×2、返回 ES（性能两项仍在游戏内 OSD）。
+- 三张固件卡各带 **StatusBadge**（绿=已安装 / 橙=缺失 / 灰=可选），
+  状态直接读 `fs/pd0`、`fs/vs0`、`fs/sa0`；已装卡片置灰、A 不再进文件浏览器
+  （对应安卓「已装则隐藏安装按钮」）。launcher 装完重新弹面板，徽章即时变绿。
+- 「固件下载区域」按 A 在 5 个区域间循环（简中/繁中/English/日本語/한국어），
+  把对应 PlayStation 官网 URL 写入 `/roms/vita3k/firmware-download-url.txt`
+  （掌机没有浏览器，供手机/电脑下载 PUP 后拷卡）；区域索引持久化到
+  `.firmware-region`，重开面板不丢。
+- 真机验证：模拟缺固件 → 徽章「预装包 已安装 / 主固件 缺失 / 字体包 缺失」；
+  区域 A 后 URL 变 `zh-hant-hk`，B 重开面板仍是 `zh-hant-hk`；
+  装主固件 → 徽章变绿、提示只剩字体包（截图 `shots/setup-android-half.png`）；
+  装字体 → 自动 `Vita3K -F -r PCSE00328`。编译零警告，测试后恢复固件。
+- 未采纳（安卓专属/触屏专属）：11 分类完整设置页、Camera 图像、自定义 GPU
+  驱动、触屏 Overlay 编辑器、文本搜索框、单游戏配置保存。若以后要 Tab 分组，
+  参考 `EmulationPauseMenu.kt` 的 4 Tab 与 `SettingsComponents.kt` 的控件。

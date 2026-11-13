@@ -41,6 +41,11 @@ leak in.
 Select+Start always SIGKILLs Vita3K (it swallows SIGTERM) and exits; the
 launcher's EXIT trap then brings ES back.
 
+The handheld game-grid frontend (vita3k-frontend-wl.c) writes
+/roms/vita3k/.frontend-active while it owns the screen; this mapper then stands
+down completely (no OSD, no forwarded keys) and resumes as soon as the frontend
+removes the flag and execs Vita3K.
+
 Usage: vita3k-pad.py [process-name]   (default Vita3K)
 """
 import ctypes
@@ -91,6 +96,7 @@ STATE_CHECK_INTERVAL = 5.0  # seconds between game-state journal polls
 MAPPER_STARTED_AT = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 OSD_ACTIVE = "/roms/vita3k/.osd-active"
 OSD_BIN = "/usr/local/bin/vita3k-osd"
+FRONTEND_ACTIVE = "/roms/vita3k/.frontend-active"
 
 
 def hotkey_code():
@@ -333,6 +339,12 @@ def main():
                                 break
                             if event is None:
                                 break
+                            # The handheld frontend reads the pad itself and
+                            # owns the screen; stand down completely so no OSD
+                            # pops up over it and no keys are forwarded. The
+                            # flag is removed when it execs Vita3K.
+                            if os.path.exists(FRONTEND_ACTIVE):
+                                continue
                             if event.type == EV_KEY:
                                 code, val = event.code, event.value
                                 if code == START and val == 1 and SELECT in pad.active_keys():

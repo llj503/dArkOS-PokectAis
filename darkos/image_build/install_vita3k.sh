@@ -4,7 +4,8 @@
 #   install_vita3k.sh <bundle.tar.zst> [scripts-dir]
 #
 # scripts-dir defaults to the directory holding this script and must contain
-# psvita-launch.sh, vita3k-pad.py, vita3k-ports-gui.sh and patch_es_vita.py.
+# psvita-launch.sh, vita3k-pad.py and patch_es_vita.py. The in-game settings
+# OSD is opened by the pad mapper during a game; no Ports entry is installed.
 set -euo pipefail
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -14,7 +15,7 @@ BUNDLE=/opt/vita3k
 ESCFG=/etc/emulationstation/es_systems.cfg
 
 [ -r "$TARBALL" ] || { echo "cannot read $TARBALL" >&2; exit 1; }
-for f in psvita-launch.sh vita3k-pad.py vita3k-ports-gui.sh patch_es_vita.py; do
+for f in psvita-launch.sh vita3k-pad.py patch_es_vita.py; do
     [ -r "$SCRIPTS/$f" ] || { echo "missing $SCRIPTS/$f" >&2; exit 1; }
 done
 
@@ -54,10 +55,12 @@ install -m 0755 "$SCRIPTS/psvita-launch.sh" /usr/local/bin/psvita-launch.sh
 # Pad -> uinput keyboard: Weston ignores gamepads, so the Qt GUI needs keys.
 install -m 0755 "$SCRIPTS/vita3k-pad.py" /usr/local/bin/vita3k-pad.py
 rm -f /usr/local/share/vita3k.gptk   # gptokeyb map, no longer used
-mkdir -p /roms/psvita /roms/vita3k /roms/ports
-chown ark:ark /roms/psvita /roms/vita3k /roms/ports
-install -m 0755 -o ark -g ark "$SCRIPTS/vita3k-ports-gui.sh" "/roms/ports/Vita3K.sh"
+mkdir -p /roms/psvita /roms/vita3k
+chown ark:ark /roms/psvita /roms/vita3k
 [ -e "$BUNDLE/portable" ] || ln -s /roms/vita3k "$BUNDLE/portable"
+
+# The settings panel is an in-game OSD, not a Ports/PortMaster entry.
+rm -f "/roms/ports/Vita3K.sh" "/roms/ports/Vita3K 高级设置.sh"
 
 echo "== adding the psvita system to ES =="
 if grep -q "<name>psvita</name>" "$ESCFG"; then
@@ -80,5 +83,5 @@ fi
 
 echo "== restarting ES =="
 systemctl restart emulationstation
-echo "installed. Games: /roms/psvita (.vpk/.zip). GUI: Ports -> Vita3K."
+echo "installed. Games: /roms/psvita (.vpk/.zip). In-game settings: console hotkey."
 echo "Vita data (firmware, installed apps, config): /roms/vita3k"
