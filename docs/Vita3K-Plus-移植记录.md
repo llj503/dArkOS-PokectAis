@@ -558,3 +558,21 @@
 - 未采纳（安卓专属/触屏专属）：11 分类完整设置页、Camera 图像、自定义 GPU
   驱动、触屏 Overlay 编辑器、文本搜索框、单游戏配置保存。若以后要 Tab 分组，
   参考 `EmulationPauseMenu.kt` 的 4 Tab 与 `SettingsComponents.kt` 的控件。
+
+## 2026-11-13 同步到 GitHub
+
+用户要求同步到 https://github.com/llj503/dArkOS-PokectAis 。
+用 `scripts/tests/v3k-github-sync.py` 把工作区产物同步到 checkout
+（`/tmp/darkos-probe`，origin 已改回 GitHub HTTPS），静默凭据推送，
+**未弹任何 GitHub 窗口**。
+
+- 提交 `918a646`（`f79317a..918a646 main -> main`）：**24 个文件**，
+  2778 insertions / 178 deletions；远端 `git ls-remote` 与本地 HEAD 一致。
+- 新增/更新：`vita3k-osd-wl.c`（游戏内快捷设置 + setup 文件浏览器 +
+  安卓式状态徽章）、`vita3k-frontend-wl.c`（游戏网格）、
+  `psvita-launch.sh`（固件闸门/背光恢复）、`vita3k-pad.py`、`install_vita3k.sh`、
+  `vita3k-config-template.yml`、`xdg-shell.xml`、6 个新部署/验证脚本、
+  9 张新截图、移植记录与同步说明。
+- 未上传：release tarballs、上游 `source/` 快照、`repo/*.bundle`、
+  `.workbuddy/`、`__pycache__`；这些已有权威来源或属临时文件。
+- 匿名 API 复核 `darkos/image_build/` 目录：上述源码文件均在 main 上。
