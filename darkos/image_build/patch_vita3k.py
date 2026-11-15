@@ -37,6 +37,12 @@ Four upstream defects plus one pocketAis feature:
    focus the app list on startup / after a game closes. ``Enter`` already
    boots the selected row (``AppsListTable::keyPressEvent``).
 
+7. ``vita3k/renderer/src/vulkan/overlay_renderer.cpp``: on a 1024x768 panel
+   the 960x544 picture is letterboxed, leaving a matte above the game viewport.
+   Widen the overlay viewport/scissor up to y=0 and remap only ``perf_overlay``
+   onto that taller area, so the top-right FPS badge is drawn outside the
+   active picture. With no matte (viewport_y == 0) behaviour is unchanged.
+
 Usage: patch_vita3k.py <vita3k-source-root>
 Idempotent: safe to run twice.
 """
@@ -294,6 +300,95 @@ def patch_handheld_gui(root: Path) -> None:
         print(f"patched {p} (focus restore after game closes)")
 
 
+OVERLAY_MATTE_MARKER = "// pocketAis: draw the FPS overlay in the top letterbox matte"
+
+OVERLAY_OLD = """    vk::Viewport vk_viewport{
+        .x = viewport_x,
+        .y = viewport_y,
+        .width = viewport_w,
+        .height = viewport_h,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    cmd_buffer.setViewport(0, vk_viewport);
+
+    vk::Rect2D scissor{
+        .offset = { static_cast<int32_t>(viewport_x), static_cast<int32_t>(viewport_y) },
+        .extent = { static_cast<uint32_t>(viewport_w), static_cast<uint32_t>(viewport_h) },
+    };
+    cmd_buffer.setScissor(0, scissor);
+
+    for (auto &prepared : m_prepared_views) {
+        for (const auto &draw_cmd : prepared.compiled.draw_commands) {
+            draw_command(cmd_buffer, draw_cmd,
+                viewport_w, viewport_h, viewport_x, viewport_y);
+        }
+"""
+
+OVERLAY_NEW = """    // pocketAis: draw the FPS overlay in the top letterbox matte
+    // Vita3K maps the 960x544 virtual overlay space onto the game viewport.
+    // On a 1024x768 panel the 16:9 picture is letterboxed, so viewport_y is
+    // the height of the top matte. Widen the Vulkan viewport/scissor up to
+    // y=0 and remap ONLY perf_overlay onto that taller area: its top-right
+    // FPS badge then lands in the matte, outside the active picture. Other
+    // overlays keep their original mapping. With no matte nothing changes.
+    const bool has_matte = viewport_y > 4.f;
+    const float full_h = viewport_y + viewport_h;
+    const float vp_y = has_matte ? 0.f : viewport_y;
+    const float vp_h = has_matte ? full_h : viewport_h;
+
+    vk::Viewport vk_viewport{
+        .x = viewport_x,
+        .y = vp_y,
+        .width = viewport_w,
+        .height = vp_h,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+    cmd_buffer.setViewport(0, vk_viewport);
+
+    vk::Rect2D scissor{
+        .offset = { static_cast<int32_t>(viewport_x), static_cast<int32_t>(vp_y) },
+        .extent = { static_cast<uint32_t>(viewport_w), static_cast<uint32_t>(vp_h) },
+    };
+    cmd_buffer.setScissor(0, scissor);
+
+    for (auto &prepared : m_prepared_views) {
+        const bool is_perf = dynamic_cast<overlay::perf_overlay *>(prepared.view.get()) != nullptr;
+        const float cmd_y = (has_matte && is_perf) ? 0.f : viewport_y;
+        const float cmd_h = (has_matte && is_perf) ? full_h : viewport_h;
+        for (const auto &draw_cmd : prepared.compiled.draw_commands) {
+            draw_command(cmd_buffer, draw_cmd,
+                viewport_w, cmd_h, viewport_x, cmd_y);
+        }
+"""
+
+
+def patch_overlay_matte(root: Path) -> None:
+    """7. Put the in-game FPS badge in the letterbox matte (outside the picture).
+
+    Only the Vulkan overlay renderer is patched; the OpenGL renderer keeps the
+    stock behaviour. Idempotent.
+    """
+    p = root / "vita3k/renderer/src/vulkan/overlay_renderer.cpp"
+    if not p.is_file():
+        print(f"WARNING: {p} not found")
+        return
+    t = p.read_text(encoding="utf-8")
+    if OVERLAY_MATTE_MARKER in t:
+        print(f"already patched {p}")
+        return
+    if OVERLAY_OLD not in t:
+        print(f"WARNING: overlay render block not found in {p}")
+        return
+    t = t.replace(OVERLAY_OLD, OVERLAY_NEW, 1)
+    if "#include <overlay/perf_overlay.h>" not in t:
+        t = t.replace("#include <overlay/font.h>",
+                      "#include <overlay/font.h>\n#include <overlay/perf_overlay.h>", 1)
+    p.write_text(t, encoding="utf-8")
+    print(f"patched {p} (FPS overlay in top matte)")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
@@ -306,6 +401,7 @@ def main() -> None:
     patch_cli_autoboot(root)
     patch_in_game_menu(root)
     patch_handheld_gui(root)
+    patch_overlay_matte(root)
 
 
 if __name__ == "__main__":
